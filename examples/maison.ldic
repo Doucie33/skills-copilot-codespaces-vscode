@@ -1,0 +1,17 @@
+PROJET Maison
+LANGUE fr-CA
+
+ZONE Salon
+  CAPTEUR Temp_Salon TYPE temperature UNITE C SOURCE mqtt "maison/salon/temp"
+  SORTIE Chauffage_Salon TYPE relais GPIO25 ETAT_SECURITE OFF
+
+  CONSIGNE Temp_Confort = 22 C
+
+  SI Temp_Salon < Temp_Confort ALORS
+    Chauffage_Salon = ON
+  SINON
+    Chauffage_Salon = OFF
+  FIN
+FIN_ZONE
+
+FIN_PROJET

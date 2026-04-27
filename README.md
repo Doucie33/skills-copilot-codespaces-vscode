@@ -92,3 +92,31 @@ Get help: [Post in our discussion board](https://github.com/orgs/skills/discussi
 &copy; 2023 GitHub &bull; [Code of Conduct](https://www.contributor-covenant.org/version/2/1/code_of_conduct/code_of_conduct.md) &bull; [MIT License](https://gh.io/mit)
 
 </footer>
+
+## LDIC-G MVP (exécutable)
+
+Ce dépôt inclut maintenant un MVP exécutable pour LDIC-G.
+
+### Commandes
+
+```bash
+python ldic.py validate examples/maison.ldic
+python ldic.py compile examples/maison.ldic --output programme.json
+python ldic.py run examples/maison.ldic --inputs '{"Temp_Salon": 19}'
+```
+
+### Fichiers
+
+- `ldic_validator.py` : validation basique (structure SI/SINON/FIN, mélange FR/EN)
+- `ldic_parser.py` : parsing d’un sous-ensemble LDIC-G
+- `ldic_compiler.py` : compilation vers modèle JSON interne
+- `ldic_runtime.py` : exécution d’une passe de logique
+- `ldic.py` : CLI unique
+
+### Créer un ZIP LDIC-G
+
+```bash
+scripts/package_ldicg.sh
+```
+
+Le fichier généré sera : `dist/LDIC-G.zip`.
