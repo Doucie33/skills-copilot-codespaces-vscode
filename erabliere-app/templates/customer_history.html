@@ -85,9 +85,9 @@
               <tr><th>#</th><th>Produit</th><th class="text-end">Quantité totale</th><th class="text-end">Dépense totale</th></tr>
             </thead>
             <tbody>
-              {% for i, p in enumerate(top_products) %}
+              {% for p in top_products %}
               <tr>
-                <td><span class="product-rank rank-{{ i+1 }}">{{ i+1 }}</span></td>
+                <td><span class="product-rank rank-{{ loop.index }}">{{ loop.index }}</span></td>
                 <td class="fw-semibold">{{ p.product_name }}</td>
                 <td class="text-end">{{ p.total_qty }}</td>
                 <td class="text-end">{{ "%.2f"|format(p.total_spent) }} $</td>

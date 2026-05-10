@@ -38,7 +38,7 @@
         <code class="small text-muted">{{ s.subscription_id }}</code>
       </div>
       <div class="card-footer bg-transparent d-flex gap-2">
-        <button class="btn btn-sm btn-outline-primary flex-grow-1" onclick="editSub({{ s|tojson }})">
+        <button class="btn btn-sm btn-outline-primary flex-grow-1" onclick='editSub({{ s|tojson }})'>
           <i class="bi bi-pencil me-1"></i>Modifier
         </button>
         <button class="btn btn-sm btn-outline-danger" onclick="deleteSub('{{ s.subscription_id }}')">
