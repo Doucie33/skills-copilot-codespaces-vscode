@@ -23,19 +23,27 @@ from reportlab.lib.units import inch, cm
 from reportlab.lib.enums import TA_CENTER, TA_RIGHT, TA_LEFT
 import sqlite3
 
-# ── Chemins portables : tout relatif au dossier de app.py ────────────────────
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DATA_DIR = os.path.join(BASE_DIR, 'data')
-DB_PATH  = os.path.join(DATA_DIR, 'erabliere.db')
-PDF_DIR  = os.path.join(DATA_DIR, 'pdfs')
-UPLOAD_DIR = os.path.join(BASE_DIR, 'static', 'uploads')
+# ── Chemins portables ─────────────────────────────────────────────────────────
+# Sur clé USB : app.py est dans  {USB}/Erabliere/app/
+#               données dans     {USB}/Erabliere/data/  (partagées Win+Linux)
+# En développement : app.py est directement dans erabliere-app/
+APP_DIR  = os.path.dirname(os.path.abspath(__file__))
+# Détecte si on est dans un sous-dossier "app" (mode clé USB)
+if os.path.basename(APP_DIR).lower() == 'app':
+    BASE_DIR = os.path.dirname(APP_DIR)      # remonte dans Erabliere/
+else:
+    BASE_DIR = APP_DIR                        # mode développement
+DATA_DIR   = os.path.join(BASE_DIR, 'data')
+DB_PATH    = os.path.join(DATA_DIR, 'erabliere.db')
+PDF_DIR    = os.path.join(DATA_DIR, 'pdfs')
+UPLOAD_DIR = os.path.join(APP_DIR, 'static', 'uploads')
 
 os.makedirs(DATA_DIR, exist_ok=True)
 os.makedirs(PDF_DIR, exist_ok=True)
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
-app = Flask(__name__, template_folder=os.path.join(BASE_DIR, 'templates'),
-            static_folder=os.path.join(BASE_DIR, 'static'))
+app = Flask(__name__, template_folder=os.path.join(APP_DIR, 'templates'),
+            static_folder=os.path.join(APP_DIR, 'static'))
 app.secret_key = 'erabliere-maple-secret-2024'
 app.jinja_env.globals.update(enumerate=enumerate, now=datetime.now)
 app.config['UPLOAD_FOLDER'] = UPLOAD_DIR
