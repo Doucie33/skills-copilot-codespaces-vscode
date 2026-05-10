@@ -1,0 +1,11 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Érablière
+GenericName=Logiciel de gestion d'érablière
+Comment=Gestion clients, factures, stock, production
+Exec=bash -c 'bash "$(dirname "$(readlink -f "%k")")/LANCER.sh"'
+Icon=erabliere-icon
+Terminal=true
+Categories=Office;Finance;
+StartupNotify=true
