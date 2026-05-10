@@ -56,6 +56,7 @@
             <div class="alert alert-light border py-2 px-3 small">
               <i class="bi bi-person-fill me-1 text-success"></i>
               <span id="customerInfoText"></span>
+              <span id="discountBadge" class="badge bg-warning text-dark ms-2" style="display:none"></span>
             </div>
           </div>
           <div class="col-12">
@@ -93,6 +94,10 @@
           <div class="d-flex justify-content-between mb-2">
             <span class="text-muted">Sous-total</span>
             <span id="sumSubtotal">0,00 $</span>
+          </div>
+          <div class="d-flex justify-content-between mb-2 text-warning" id="sumDiscountRow" style="display:none!important">
+            <span id="sumDiscountLabel">Rabais</span>
+            <span id="sumDiscount">0,00 $</span>
           </div>
           <div class="d-flex justify-content-between mb-2">
             <span class="text-muted">TPS (5%)</span>
@@ -156,19 +161,52 @@ const COMPANY = {{ company|tojson }};
 const CUSTOMERS = {{ customers|tojson }};
 
 let lineCount = 0;
+let currentDiscount = { type: 'none', value: 0, label: '' };
 
 function fmt(n) { return n.toFixed(2).replace('.', ',') + ' $'; }
 
-function updateCustomerInfo() {
+async function updateCustomerInfo() {
   const sel = document.getElementById('invCustomer');
   const opt = sel.options[sel.selectedIndex];
   const box = document.getElementById('customerInfoBox');
+  currentDiscount = { type: 'none', value: 0, label: '' };
+
   if (sel.value) {
     box.style.display = '';
     document.getElementById('customerInfoText').textContent =
       `${opt.dataset.name} — ${opt.dataset.address || ''} ${opt.dataset.city || ''} — Tél: ${opt.dataset.phone || '—'}`;
+
+    try {
+      const res = await fetch(`/api/customers/${sel.value}/subscription`);
+      const json = await res.json();
+      if (json.has_subscription && json.subscription && json.subscription.discount_type && json.subscription.discount_type !== 'none') {
+        const sub = json.subscription;
+        currentDiscount = {
+          type: sub.discount_type,
+          value: parseFloat(sub.discount_value) || 0,
+          label: `Rabais ${sub.name}`
+        };
+      }
+    } catch(e) {}
+
+    updateDiscountBadge();
   } else {
     box.style.display = 'none';
+    updateDiscountBadge();
+  }
+  updateTotals();
+}
+
+function updateDiscountBadge() {
+  let badge = document.getElementById('discountBadge');
+  if (!badge) return;
+  if (currentDiscount.type !== 'none' && currentDiscount.value > 0) {
+    const label = currentDiscount.type === 'percent'
+      ? `${currentDiscount.value}%` : `${currentDiscount.value.toFixed(2)} $`;
+    badge.textContent = `Rabais abonnement: -${label}`;
+    badge.style.display = '';
+  } else {
+    badge.style.display = 'none';
   }
 }
 
@@ -294,33 +332,66 @@ function updateTotals() {
     else if (taxType === 'tps_only') { tpsTotal += sub * TPS; }
     else if (taxType === 'tvq_only') { tvqTotal += sub * TVQ; }
   });
+
+  let discountAmt = 0;
+  const discRow = document.getElementById('sumDiscountRow');
+  if (currentDiscount.type !== 'none' && currentDiscount.value > 0 && subtotal > 0) {
+    discountAmt = currentDiscount.type === 'percent'
+      ? subtotal * currentDiscount.value / 100
+      : Math.min(currentDiscount.value, subtotal);
+    discountAmt = Math.round(discountAmt * 100) / 100;
+    const ratio = (subtotal - discountAmt) / subtotal;
+    tpsTotal = Math.round(tpsTotal * ratio * 100) / 100;
+    tvqTotal = Math.round(tvqTotal * ratio * 100) / 100;
+    discRow.style.display = '';
+    document.getElementById('sumDiscountLabel').textContent = currentDiscount.label || 'Rabais';
+    document.getElementById('sumDiscount').textContent = '-' + fmt(discountAmt);
+  } else {
+    discRow.style.display = 'none';
+  }
+
   document.getElementById('sumSubtotal').textContent = fmt(subtotal);
   document.getElementById('sumTPS').textContent = fmt(tpsTotal);
   document.getElementById('sumTVQ').textContent = fmt(tvqTotal);
-  document.getElementById('sumTotal').textContent = fmt(subtotal + tpsTotal + tvqTotal);
+  document.getElementById('sumTotal').textContent = fmt(subtotal - discountAmt + tpsTotal + tvqTotal);
 }
 
 function getInvoiceData() {
   const items = [];
+  let subtotal = 0;
   document.querySelectorAll('[id^="line-"]').forEach(line => {
     const id = line.id.replace('line-', '');
     const sel = document.getElementById(`lProd-${id}`);
     const opt = sel.options[sel.selectedIndex];
     if (!sel.value) return;
+    const pu = parseFloat(document.getElementById(`lPU-${id}`).value) || 0;
+    const qty = parseFloat(document.getElementById(`lQty-${id}`).value) || 1;
+    subtotal += pu * qty;
     items.push({
       product_id: sel.value,
       product_name: opt.dataset.name,
-      unit_price: parseFloat(document.getElementById(`lPU-${id}`).value) || 0,
-      quantity: parseFloat(document.getElementById(`lQty-${id}`).value) || 1,
+      unit_price: pu,
+      quantity: qty,
       tax_type: document.getElementById(`lTaxType-${id}`).value,
     });
   });
+
+  let discountAmt = 0;
+  if (currentDiscount.type !== 'none' && currentDiscount.value > 0 && subtotal > 0) {
+    discountAmt = currentDiscount.type === 'percent'
+      ? subtotal * currentDiscount.value / 100
+      : Math.min(currentDiscount.value, subtotal);
+    discountAmt = Math.round(discountAmt * 100) / 100;
+  }
+
   return {
     invoice_number: document.getElementById('invNum').value,
     customer_id: document.getElementById('invCustomer').value,
     date: document.getElementById('invDate').value,
     status: document.getElementById('invStatus').value,
     notes: document.getElementById('invNotes').value,
+    discount_label: currentDiscount.label || '',
+    discount_amount: discountAmt,
     items,
   };
 }
@@ -355,7 +426,17 @@ function previewInvoice() {
     </tr>`;
   });
 
-  const grandTotal = subtotal + tpsT + tvqT;
+  let discountAmt = 0;
+  if (currentDiscount.type !== 'none' && currentDiscount.value > 0 && subtotal > 0) {
+    discountAmt = currentDiscount.type === 'percent'
+      ? subtotal * currentDiscount.value / 100
+      : Math.min(currentDiscount.value, subtotal);
+    discountAmt = Math.round(discountAmt * 100) / 100;
+    const ratio = (subtotal - discountAmt) / subtotal;
+    tpsT = Math.round(tpsT * ratio * 100) / 100;
+    tvqT = Math.round(tvqT * ratio * 100) / 100;
+  }
+  const grandTotal = subtotal - discountAmt + tpsT + tvqT;
   const logoHtml = COMPANY.logo_path
     ? `<img src="/static/${COMPANY.logo_path}" style="max-height:60px;max-width:150px;object-fit:contain"/>`
     : `<div style="font-size:2rem">🍁</div>`;
@@ -406,6 +487,7 @@ function previewInvoice() {
 
     <table class="invoice-totals ms-auto" style="min-width:280px">
       <tr><td>Sous-total:</td><td class="text-end">${subtotal.toFixed(2)} $</td></tr>
+      ${discountAmt > 0 ? `<tr style="color:#f59e0b"><td>${currentDiscount.label || 'Rabais'}:</td><td class="text-end">-${discountAmt.toFixed(2)} $</td></tr>` : ''}
       <tr><td>TPS (5%):</td><td class="text-end">${tpsT.toFixed(2)} $</td></tr>
       <tr><td>TVQ (9,975%):</td><td class="text-end">${tvqT.toFixed(2)} $</td></tr>
       <tr class="grand-total-row">

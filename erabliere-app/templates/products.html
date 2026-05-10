@@ -4,9 +4,18 @@
 {% block content %}
 <div class="page-header">
   <h1 class="page-title"><i class="bi bi-box-seam"></i> Produits</h1>
-  <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#productModal" onclick="openNew()">
-    <i class="bi bi-plus-lg me-1"></i>Nouveau produit
-  </button>
+  <div class="d-flex gap-2 flex-wrap">
+    <button class="btn btn-outline-warning" id="btnBulkUpdate" disabled
+            data-bs-toggle="modal" data-bs-target="#bulkModal">
+      <i class="bi bi-percent me-1"></i>Modifier les prix
+    </button>
+    <button class="btn btn-outline-success" onclick="selectAll()">
+      <i class="bi bi-check-all me-1"></i>Tout sélectionner
+    </button>
+    <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#productModal" onclick="openNew()">
+      <i class="bi bi-plus-lg me-1"></i>Nouveau produit
+    </button>
+  </div>
 </div>
 
 <div class="card">
@@ -15,6 +24,9 @@
       <table class="table table-hover mb-0" id="productsTable">
         <thead>
           <tr>
+            <th style="width:40px">
+              <input type="checkbox" id="checkAll" onchange="toggleAll(this)" class="form-check-input"/>
+            </th>
             <th>ID Produit</th><th>Nom</th><th>Catégorie</th>
             <th>Unité</th><th class="text-end">Prix unitaire</th>
             <th class="text-center">Taxes</th><th class="text-center">Statut</th><th></th>
@@ -23,6 +35,10 @@
         <tbody>
           {% for p in products %}
           <tr id="row-{{ p.product_id }}">
+            <td>
+              <input type="checkbox" class="form-check-input prod-check"
+                     value="{{ p.product_id }}" onchange="updateBulkBtn()"/>
+            </td>
             <td><code class="small text-success">{{ p.product_id }}</code></td>
             <td>
               <div class="fw-semibold">{{ p.name }}</div>
@@ -53,9 +69,8 @@
             </td>
           </tr>
           {% else %}
-          <tr><td colspan="8" class="text-center text-muted py-5">
-            <i class="bi bi-box-seam fs-2 d-block mb-2 text-muted"></i>
-            Aucun produit. Créez votre premier produit.
+          <tr><td colspan="9" class="text-center text-muted py-5">
+            <i class="bi bi-box-seam fs-2 d-block mb-2"></i>Aucun produit.
           </td></tr>
           {% endfor %}
         </tbody>
@@ -64,7 +79,7 @@
   </div>
 </div>
 
-<!-- Modal -->
+<!-- Modal ajout/modification produit -->
 <div class="modal fade" id="productModal" tabindex="-1">
   <div class="modal-dialog modal-lg">
     <div class="modal-content">
@@ -85,26 +100,19 @@
           </div>
           <div class="col-md-4">
             <label class="form-label">Catégorie</label>
-            <input type="text" class="form-control" id="prodCategory" list="categoryList" placeholder="Ex: Sirop"/>
+            <input type="text" class="form-control" id="prodCategory" list="categoryList"/>
             <datalist id="categoryList">
-              <option value="Sirop d'érable"/>
-              <option value="Beurre d'érable"/>
-              <option value="Sucre d'érable"/>
-              <option value="Tire sur la neige"/>
-              <option value="Confiture"/>
-              <option value="Abonnement"/>
-              <option value="Service"/>
+              <option value="Sirop d'érable"/><option value="Beurre d'érable"/>
+              <option value="Sucre d'érable"/><option value="Tire sur la neige"/>
+              <option value="Confiture"/><option value="Abonnement"/><option value="Service"/>
             </datalist>
           </div>
           <div class="col-md-4">
             <label class="form-label">Unité</label>
             <select class="form-select" id="prodUnit">
-              <option value="unité">Unité</option>
-              <option value="litre">Litre</option>
-              <option value="ml">ml</option>
-              <option value="kg">kg</option>
-              <option value="g">g</option>
-              <option value="boîte">Boîte</option>
+              <option value="unité">Unité</option><option value="litre">Litre</option>
+              <option value="ml">ml</option><option value="kg">kg</option>
+              <option value="g">g</option><option value="boîte">Boîte</option>
               <option value="caisse">Caisse</option>
             </select>
           </div>
@@ -119,7 +127,7 @@
           </div>
           <div class="col-12">
             <label class="form-label">Description</label>
-            <textarea class="form-control" id="prodDesc" rows="2" placeholder="Description optionnelle"></textarea>
+            <textarea class="form-control" id="prodDesc" rows="2"></textarea>
           </div>
           <div class="col-12">
             <div class="form-check form-switch">
@@ -138,26 +146,148 @@
     </div>
   </div>
 </div>
+
+<!-- Modal modification des prix en lot -->
+<div class="modal fade" id="bulkModal" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-percent me-2"></i>Modifier les prix</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="alert alert-info small">
+          <i class="bi bi-info-circle me-1"></i>
+          <span id="bulkSelectionInfo">Produits sélectionnés : <strong id="bulkCount">0</strong></span>
+        </div>
+
+        <div class="row g-3 mb-3">
+          <div class="col-md-6">
+            <label class="form-label fw-semibold">Type de modification</label>
+            <div class="d-flex gap-3">
+              <div class="form-check">
+                <input class="form-check-input" type="radio" name="updateType" id="typePercent" value="percent" checked/>
+                <label class="form-check-label" for="typePercent">Pourcentage (%)</label>
+              </div>
+              <div class="form-check">
+                <input class="form-check-input" type="radio" name="updateType" id="typeFixed" value="fixed"/>
+                <label class="form-check-label" for="typeFixed">Montant fixe ($)</label>
+              </div>
+            </div>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label fw-semibold">Valeur <span id="unitLabel">(% — positif=hausse, négatif=baisse)</span></label>
+            <input type="number" class="form-control" id="bulkValue" step="0.01"
+                   placeholder="Ex: 5 pour +5% ou -3 pour -3$" oninput="previewBulk()"/>
+          </div>
+        </div>
+
+        <div id="bulkPreview" style="display:none">
+          <h6 class="fw-semibold mb-2">Aperçu des changements :</h6>
+          <div class="table-responsive" style="max-height:300px;overflow-y:auto">
+            <table class="table table-sm">
+              <thead class="table-dark">
+                <tr><th>Produit</th><th class="text-end">Prix actuel</th>
+                    <th class="text-center">→</th><th class="text-end">Nouveau prix</th></tr>
+              </thead>
+              <tbody id="previewBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+        <button type="button" class="btn btn-warning fw-bold" onclick="applyBulkUpdate()">
+          <i class="bi bi-check-lg me-1"></i>Appliquer les changements
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
 {% endblock %}
 
 {% block scripts %}
 <script>
-$(function() {
-  $('#productsTable').DataTable({
-    language: { url: 'https://cdn.datatables.net/plug-ins/1.13.8/i18n/fr-FR.json' },
-    order: [[1, 'asc']]
-  });
-});
+const ALL_PRODUCTS = {{ products|tojson }};
+let selectedIds = [];
 
+// ── Sélection ──────────────────────────────────────────────────────────────
+function updateBulkBtn() {
+  selectedIds = [...document.querySelectorAll('.prod-check:checked')].map(c => c.value);
+  document.getElementById('btnBulkUpdate').disabled = selectedIds.length === 0;
+  document.getElementById('bulkCount').textContent = selectedIds.length;
+  document.getElementById('checkAll').checked = selectedIds.length === ALL_PRODUCTS.filter(p=>p.active).length;
+  previewBulk();
+}
+
+function selectAll() {
+  document.querySelectorAll('.prod-check').forEach(c => c.checked = true);
+  updateBulkBtn();
+}
+
+function toggleAll(cb) {
+  document.querySelectorAll('.prod-check').forEach(c => c.checked = cb.checked);
+  updateBulkBtn();
+}
+
+document.querySelectorAll('[name="updateType"]').forEach(r => r.addEventListener('change', function() {
+  document.getElementById('unitLabel').textContent = this.value === 'percent'
+    ? '(% — positif=hausse, négatif=baisse)'
+    : '($ — positif=hausse, négatif=baisse)';
+  previewBulk();
+}));
+
+function previewBulk() {
+  const val = parseFloat(document.getElementById('bulkValue').value);
+  const type = document.querySelector('[name="updateType"]:checked').value;
+  if (isNaN(val) || selectedIds.length === 0) {
+    document.getElementById('bulkPreview').style.display = 'none';
+    return;
+  }
+  const products = ALL_PRODUCTS.filter(p => selectedIds.includes(p.product_id));
+  let rows = '';
+  products.forEach(p => {
+    const np = type === 'percent'
+      ? Math.max(0, p.price * (1 + val/100))
+      : Math.max(0, p.price + val);
+    const color = np > p.price ? 'text-success' : np < p.price ? 'text-danger' : '';
+    rows += `<tr>
+      <td>${p.name}</td>
+      <td class="text-end">${p.price.toFixed(2)} $</td>
+      <td class="text-center text-muted">→</td>
+      <td class="text-end fw-bold ${color}">${np.toFixed(2)} $</td>
+    </tr>`;
+  });
+  document.getElementById('previewBody').innerHTML = rows;
+  document.getElementById('bulkPreview').style.display = '';
+}
+
+async function applyBulkUpdate() {
+  const val = parseFloat(document.getElementById('bulkValue').value);
+  const type = document.querySelector('[name="updateType"]:checked').value;
+  if (isNaN(val)) { alert('Entrez une valeur.'); return; }
+  if (!confirm(`Appliquer la modification à ${selectedIds.length} produit(s) ?`)) return;
+
+  const res = await fetch('/api/products/bulk-price-update', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ product_ids: selectedIds, update_type: type, value: val })
+  });
+  const json = await res.json();
+  if (json.success) {
+    bootstrap.Modal.getInstance(document.getElementById('bulkModal')).hide();
+    location.reload();
+  } else alert('Erreur: ' + json.error);
+}
+
+// ── Produit CRUD ───────────────────────────────────────────────────────────
 function openNew() {
   document.getElementById('modalTitle').textContent = 'Nouveau produit';
   document.getElementById('editProductId').value = '';
-  document.getElementById('prodName').value = '';
+  ['prodName','prodCategory','prodDesc'].forEach(id => document.getElementById(id).value = '');
   document.getElementById('prodPrice').value = '';
-  document.getElementById('prodCategory').value = '';
   document.getElementById('prodUnit').value = 'unité';
   document.getElementById('prodTaxType').value = 'tps_tvq';
-  document.getElementById('prodDesc').value = '';
   document.getElementById('prodActive').checked = true;
 }
 
@@ -186,13 +316,10 @@ async function saveProduct() {
     active: document.getElementById('prodActive').checked ? 1 : 0,
   };
   if (!data.name || !data.price) { alert('Nom et prix obligatoires.'); return; }
-
-  const url = pid ? `/api/products/${pid}` : '/api/products';
-  const method = pid ? 'PUT' : 'POST';
-  const res = await fetch(url, { method, headers: {'Content-Type':'application/json'}, body: JSON.stringify(data) });
+  const res = await fetch(pid ? `/api/products/${pid}` : '/api/products',
+    { method: pid ? 'PUT' : 'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(data) });
   const json = await res.json();
-  if (json.success) location.reload();
-  else alert('Erreur: ' + json.error);
+  if (json.success) location.reload(); else alert('Erreur: ' + json.error);
 }
 
 async function deleteProduct(pid) {

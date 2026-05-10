@@ -21,10 +21,18 @@
           </span>
         </div>
         <p class="text-muted small mb-2">{{ s.description or 'Aucune description.' }}</p>
-        <div class="d-flex gap-3 text-sm">
+        <div class="d-flex gap-3 text-sm flex-wrap">
           <span><i class="bi bi-tag me-1 text-success"></i><strong>{{ "%.2f"|format(s.price) }} $</strong></span>
           <span><i class="bi bi-calendar me-1 text-primary"></i>{{ s.duration_days }} jours</span>
           <span><i class="bi bi-people me-1 text-info"></i>{{ s.customer_count }} client(s)</span>
+          {% if s.discount_type and s.discount_type != 'none' %}
+          <span class="text-warning"><i class="bi bi-percent me-1"></i>
+            Rabais:
+            {% if s.discount_type == 'percent' %}{{ s.discount_value }}%
+            {% else %}{{ "%.2f"|format(s.discount_value) }} $
+            {% endif %}
+          </span>
+          {% endif %}
         </div>
         <hr class="my-2"/>
         <code class="small text-muted">{{ s.subscription_id }}</code>
@@ -79,6 +87,18 @@
               <option value="365" selected>365 jours (annuel)</option>
             </select>
           </div>
+          <div class="col-md-6">
+            <label class="form-label">Type de rabais</label>
+            <select class="form-select" id="subDiscountType" onchange="toggleDiscountValue()">
+              <option value="none">Aucun rabais</option>
+              <option value="percent">Pourcentage (%)</option>
+              <option value="fixed">Montant fixe ($)</option>
+            </select>
+          </div>
+          <div class="col-md-6" id="discountValueBox" style="display:none">
+            <label class="form-label" id="discountValueLabel">Valeur du rabais</label>
+            <input type="number" class="form-control" id="subDiscountValue" step="0.01" min="0" value="0" placeholder="0"/>
+          </div>
           <div class="col-12">
             <label class="form-label">Description</label>
             <textarea class="form-control" id="subDesc" rows="3" placeholder="Avantages, conditions..."></textarea>
@@ -104,6 +124,14 @@
 
 {% block scripts %}
 <script>
+function toggleDiscountValue() {
+  const type = document.getElementById('subDiscountType').value;
+  const box = document.getElementById('discountValueBox');
+  box.style.display = type === 'none' ? 'none' : '';
+  document.getElementById('discountValueLabel').textContent =
+    type === 'percent' ? 'Rabais (%)' : 'Rabais ($)';
+}
+
 function openNew() {
   document.getElementById('modalTitle').textContent = 'Nouvel abonnement';
   document.getElementById('editSubId').value = '';
@@ -111,6 +139,9 @@ function openNew() {
   document.getElementById('subPrice').value = '0';
   document.getElementById('subDuration').value = '365';
   document.getElementById('subDesc').value = '';
+  document.getElementById('subDiscountType').value = 'none';
+  document.getElementById('subDiscountValue').value = '0';
+  document.getElementById('discountValueBox').style.display = 'none';
   document.getElementById('subActive').checked = true;
 }
 
@@ -121,7 +152,10 @@ function editSub(s) {
   document.getElementById('subPrice').value = s.price;
   document.getElementById('subDuration').value = s.duration_days;
   document.getElementById('subDesc').value = s.description || '';
+  document.getElementById('subDiscountType').value = s.discount_type || 'none';
+  document.getElementById('subDiscountValue').value = s.discount_value || 0;
   document.getElementById('subActive').checked = s.active == 1;
+  toggleDiscountValue();
   new bootstrap.Modal(document.getElementById('subModal')).show();
 }
 
@@ -132,6 +166,8 @@ async function saveSub() {
     price: document.getElementById('subPrice').value,
     duration_days: document.getElementById('subDuration').value,
     description: document.getElementById('subDesc').value.trim(),
+    discount_type: document.getElementById('subDiscountType').value,
+    discount_value: document.getElementById('subDiscountValue').value || 0,
     active: document.getElementById('subActive').checked ? 1 : 0,
   };
   if (!data.name) { alert('Nom obligatoire.'); return; }

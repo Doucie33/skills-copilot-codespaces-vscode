@@ -66,13 +66,39 @@ def get_db():
     return conn
 
 
-def gen_id(prefix):
-    return f"{prefix}-{str(uuid.uuid4())[:8].upper()}"
+def gen_sequential_id(conn, counter_name, prefix, padding=4):
+    """Génère un ID séquentiel : PRD-0001, FAC-20260510-0001, etc."""
+    c = conn.cursor()
+    c.execute("INSERT OR IGNORE INTO id_counters (name, value) VALUES (?,0)", (counter_name,))
+    c.execute("UPDATE id_counters SET value=value+1 WHERE name=?", (counter_name,))
+    val = c.execute("SELECT value FROM id_counters WHERE name=?", (counter_name,)).fetchone()[0]
+    return f"{prefix}-{val:0{padding}d}"
+
+def gen_product_id(conn):
+    return gen_sequential_id(conn, 'product', 'PRD')
+
+def gen_customer_id(conn):
+    return gen_sequential_id(conn, 'customer', 'CLI')
+
+def gen_subscription_id(conn):
+    return gen_sequential_id(conn, 'subscription', 'ABN')
+
+def gen_invoice_id(conn):
+    today = date.today().strftime('%Y%m%d')
+    return gen_sequential_id(conn, f'invoice_{today}', f'FAC-{today}')
+
+def gen_accounting_id(conn):
+    return gen_sequential_id(conn, 'accounting', 'ENT')
 
 
 def init_db():
     conn = get_db()
     c = conn.cursor()
+
+    c.execute('''CREATE TABLE IF NOT EXISTS id_counters (
+        name TEXT PRIMARY KEY,
+        value INTEGER DEFAULT 0
+    )''')
 
     c.execute('''CREATE TABLE IF NOT EXISTS company_settings (
         id INTEGER PRIMARY KEY,
@@ -101,6 +127,8 @@ def init_db():
         description TEXT DEFAULT '',
         price REAL DEFAULT 0,
         duration_days INTEGER DEFAULT 365,
+        discount_type TEXT DEFAULT 'none',
+        discount_value REAL DEFAULT 0,
         active INTEGER DEFAULT 1,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )''')
@@ -144,6 +172,8 @@ def init_db():
         customer_name TEXT NOT NULL,
         date DATE NOT NULL,
         subtotal REAL NOT NULL DEFAULT 0,
+        discount_label TEXT DEFAULT '',
+        discount_amount REAL DEFAULT 0,
         tps_amount REAL NOT NULL DEFAULT 0,
         tvq_amount REAL NOT NULL DEFAULT 0,
         total REAL NOT NULL DEFAULT 0,
@@ -182,7 +212,28 @@ def init_db():
     )''')
 
     conn.commit()
+    _migrate_db(conn)
     conn.close()
+
+
+def _migrate_db(conn):
+    """Ajoute les nouvelles colonnes aux bases existantes."""
+    c = conn.cursor()
+    migrations = [
+        ("id_counters", "CREATE TABLE IF NOT EXISTS id_counters (name TEXT PRIMARY KEY, value INTEGER DEFAULT 0)"),
+    ]
+    col_migrations = [
+        ("subscriptions", "discount_type", "TEXT DEFAULT 'none'"),
+        ("subscriptions", "discount_value", "REAL DEFAULT 0"),
+        ("invoices", "discount_label", "TEXT DEFAULT ''"),
+        ("invoices", "discount_amount", "REAL DEFAULT 0"),
+    ]
+    for table, col, typ in col_migrations:
+        try:
+            c.execute(f"ALTER TABLE {table} ADD COLUMN {col} {typ}")
+        except Exception:
+            pass
+    conn.commit()
 
 
 # ─── HELPERS ────────────────────────────────────────────────────────────────
@@ -325,7 +376,7 @@ def api_products():
 def api_create_product():
     data = request.json
     conn = get_db()
-    pid = gen_id('PRD')
+    pid = gen_product_id(conn)
     try:
         conn.execute('''INSERT INTO products
             (product_id, name, price, category, tax_type, description, unit)
@@ -337,6 +388,42 @@ def api_create_product():
         product = row_to_dict(conn.execute('SELECT * FROM products WHERE product_id=?', (pid,)).fetchone())
         conn.close()
         return jsonify({'success': True, 'product': product})
+    except Exception as e:
+        conn.close()
+        return jsonify({'success': False, 'error': str(e)}), 400
+
+
+@app.route('/api/products/bulk-price-update', methods=['POST'])
+def api_bulk_price_update():
+    """Mise à jour groupée des prix en $ ou en %."""
+    data = request.json
+    conn = get_db()
+    try:
+        ids = data.get('product_ids', [])
+        update_type = data.get('update_type', 'percent')  # 'percent' or 'fixed'
+        value = float(data.get('value', 0))
+
+        if ids == 'all':
+            products = rows_to_list(conn.execute('SELECT * FROM products WHERE active=1').fetchall())
+        else:
+            products = rows_to_list(conn.execute(
+                f"SELECT * FROM products WHERE product_id IN ({','.join(['?']*len(ids))})", ids).fetchall())
+
+        updated = []
+        for p in products:
+            old_price = p['price']
+            if update_type == 'percent':
+                new_price = round(old_price * (1 + value / 100), 2)
+            else:
+                new_price = round(old_price + value, 2)
+            new_price = max(0, new_price)
+            conn.execute('UPDATE products SET price=? WHERE product_id=?', (new_price, p['product_id']))
+            updated.append({'product_id': p['product_id'], 'name': p['name'],
+                            'old_price': old_price, 'new_price': new_price})
+
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True, 'updated': updated, 'count': len(updated)})
     except Exception as e:
         conn.close()
         return jsonify({'success': False, 'error': str(e)}), 400
@@ -395,11 +482,27 @@ def api_customers():
     return jsonify(custs)
 
 
+@app.route('/api/customers/<customer_id>/subscription', methods=['GET'])
+def api_customer_subscription(customer_id):
+    """Retourne les infos d'abonnement d'un client pour la facturation."""
+    conn = get_db()
+    cust = row_to_dict(conn.execute('SELECT * FROM customers WHERE customer_id=?', (customer_id,)).fetchone())
+    if not cust or not cust.get('subscription_id'):
+        conn.close()
+        return jsonify({'has_subscription': False})
+    sub = row_to_dict(conn.execute('SELECT * FROM subscriptions WHERE subscription_id=?',
+                                   (cust['subscription_id'],)).fetchone())
+    conn.close()
+    if sub and sub.get('discount_type', 'none') != 'none':
+        return jsonify({'has_subscription': True, 'subscription': sub})
+    return jsonify({'has_subscription': False, 'subscription': sub})
+
+
 @app.route('/api/customers', methods=['POST'])
 def api_create_customer():
     data = request.json
     conn = get_db()
-    cid = gen_id('CLI')
+    cid = gen_customer_id(conn)
     try:
         conn.execute('''INSERT INTO customers
             (customer_id, first_name, last_name, address, city, province,
@@ -521,13 +624,14 @@ def subscriptions():
 def api_create_subscription():
     data = request.json
     conn = get_db()
-    sid = gen_id('ABN')
+    sid = gen_subscription_id(conn)
     try:
         conn.execute('''INSERT INTO subscriptions
-            (subscription_id, name, description, price, duration_days)
-            VALUES (?,?,?,?,?)''',
+            (subscription_id, name, description, price, duration_days, discount_type, discount_value)
+            VALUES (?,?,?,?,?,?,?)''',
                      (sid, data['name'], data.get('description', ''),
-                      float(data.get('price', 0)), int(data.get('duration_days', 365))))
+                      float(data.get('price', 0)), int(data.get('duration_days', 365)),
+                      data.get('discount_type', 'none'), float(data.get('discount_value', 0))))
         conn.commit()
         sub = row_to_dict(conn.execute('SELECT * FROM subscriptions WHERE subscription_id=?', (sid,)).fetchone())
         conn.close()
@@ -543,10 +647,12 @@ def api_update_subscription(sub_id):
     conn = get_db()
     try:
         conn.execute('''UPDATE subscriptions SET
-            name=?, description=?, price=?, duration_days=?, active=?
+            name=?, description=?, price=?, duration_days=?,
+            discount_type=?, discount_value=?, active=?
             WHERE subscription_id=?''',
                      (data['name'], data.get('description', ''),
                       float(data.get('price', 0)), int(data.get('duration_days', 365)),
+                      data.get('discount_type', 'none'), float(data.get('discount_value', 0)),
                       int(data.get('active', 1)), sub_id))
         conn.commit()
         conn.close()
@@ -584,15 +690,17 @@ def create_invoice():
         'SELECT * FROM customers WHERE active=1 ORDER BY last_name, first_name').fetchall())
     products_list = rows_to_list(conn.execute(
         'SELECT * FROM products WHERE active=1 ORDER BY name').fetchall())
+    subscriptions_map = {s['subscription_id']: s for s in rows_to_list(
+        conn.execute('SELECT * FROM subscriptions WHERE active=1').fetchall())}
     company = row_to_dict(conn.execute('SELECT * FROM company_settings WHERE id=1').fetchone())
+    inv_num = gen_invoice_id(conn)
+    conn.commit()
     conn.close()
-
-    inv_num = f"FAC-{datetime.now().strftime('%Y%m%d')}-{str(uuid.uuid4())[:4].upper()}"
     today = date.today().isoformat()
-
     return render_template('create_invoice.html',
                            customers=customers_list,
                            products=products_list,
+                           subscriptions_map=subscriptions_map,
                            company=company,
                            inv_num=inv_num,
                            today=today,
@@ -625,18 +733,32 @@ def api_save_invoice():
             tps_total += tps
             tvq_total += tvq
 
-        total = round(subtotal + tps_total + tvq_total, 2)
         subtotal = round(subtotal, 2)
+
+        # Rabais d'abonnement (appliqué avant les taxes)
+        discount_label = data.get('discount_label', '')
+        discount_amount = round(float(data.get('discount_amount', 0)), 2)
+
+        if discount_amount > 0:
+            # Recalculer les taxes sur le montant net
+            net = subtotal - discount_amount
+            ratio = net / subtotal if subtotal > 0 else 1
+            tps_total = round(tps_total * ratio, 2)
+            tvq_total = round(tvq_total * ratio, 2)
+
         tps_total = round(tps_total, 2)
         tvq_total = round(tvq_total, 2)
+        total = round(subtotal - discount_amount + tps_total + tvq_total, 2)
 
         conn.execute('''INSERT INTO invoices
             (invoice_number, customer_id, customer_name, date,
-             subtotal, tps_amount, tvq_amount, total, status, notes)
-            VALUES (?,?,?,?,?,?,?,?,?,?)''',
+             subtotal, discount_label, discount_amount,
+             tps_amount, tvq_amount, total, status, notes)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?)''',
                      (inv_num, customer_id, customer_name,
                       data.get('date', date.today().isoformat()),
-                      subtotal, tps_total, tvq_total, total,
+                      subtotal, discount_label, discount_amount,
+                      tps_total, tvq_total, total,
                       data.get('status', 'payée'), data.get('notes', '')))
 
         for item in items:
@@ -698,112 +820,160 @@ def invoice_pdf(invoice_number):
 
 
 def _generate_invoice_pdf(buffer, inv, items, customer, company):
+    GREEN      = colors.HexColor('#2d6a4f')
+    GREEN_DARK = colors.HexColor('#1b4332')
+    GREEN_PALE = colors.HexColor('#f0f7f4')
+    GREY_LINE  = colors.HexColor('#e2e8f0')
+    WHITE      = colors.white
+
     doc = SimpleDocTemplate(buffer, pagesize=letter,
                             rightMargin=1.5*cm, leftMargin=1.5*cm,
                             topMargin=1.5*cm, bottomMargin=1.5*cm)
     styles = getSampleStyleSheet()
-    story = []
+    story  = []
 
-    title_style = ParagraphStyle('Title', parent=styles['Normal'],
-                                  fontSize=18, fontName='Helvetica-Bold',
-                                  textColor=colors.HexColor('#2d6a4f'),
-                                  spaceAfter=4)
-    normal = styles['Normal']
-    small = ParagraphStyle('Small', parent=normal, fontSize=8)
-    bold = ParagraphStyle('Bold', parent=normal, fontName='Helvetica-Bold')
-    right = ParagraphStyle('Right', parent=normal, alignment=TA_RIGHT)
-    center = ParagraphStyle('Center', parent=normal, alignment=TA_CENTER)
+    def S(size=8, bold=False, align=TA_LEFT, color=colors.black):
+        return ParagraphStyle('s', parent=styles['Normal'], fontSize=size,
+                              fontName='Helvetica-Bold' if bold else 'Helvetica',
+                              alignment=align, textColor=color, leading=size+3)
 
-    header_data = [[
-        Paragraph(f"<b>{company.get('name','')}</b><br/>"
-                  f"{company.get('address','')} {company.get('city','')}<br/>"
-                  f"Tél: {company.get('phone','')} | {company.get('email','')}<br/>"
-                  f"TPS: {company.get('tps_number','')} | TVQ: {company.get('tvq_number','')}", small),
-        Paragraph(f"<b>FACTURE</b><br/>"
-                  f"<font size='9'>N°: {inv['invoice_number']}<br/>"
-                  f"Date: {inv['date']}<br/>"
-                  f"Statut: {inv['status']}</font>", right)
+    # ── En-tête ──────────────────────────────────────────────────────────────
+    logo_cell = ''
+    if company.get('logo_path'):
+        logo_path = os.path.join(APP_DIR, 'static', company['logo_path'])
+        if os.path.exists(logo_path):
+            try: logo_cell = RLImage(logo_path, width=3.5*cm, height=1.5*cm, kind='proportional')
+            except: pass
+
+    company_text = (f"<b>{company.get('name','')}</b><br/>"
+                    f"{company.get('address','')} {company.get('city','')} {company.get('province','')}<br/>"
+                    f"Tél : {company.get('phone','')}  |  {company.get('email','')}<br/>"
+                    f"TPS : {company.get('tps_number','—')}  |  TVQ : {company.get('tvq_number','—')}")
+
+    inv_box_text = (f"<b>FACTURE</b><br/>"
+                    f"<font size='8'>N° : {inv['invoice_number']}<br/>"
+                    f"Date : {inv['date']}<br/>"
+                    f"Statut : {inv['status']}</font>")
+
+    header = Table([[
+        [logo_cell if logo_cell else '', Paragraph(company_text, S(8))],
+        Paragraph(inv_box_text, S(14, bold=True, align=TA_RIGHT, color=WHITE)),
+    ]], colWidths=[10*cm, 7.5*cm])
+
+    # Redesign simple : deux colonnes côte à côte
+    hdr_data = [[
+        Paragraph(company_text, S(8)),
+        Paragraph(inv_box_text, S(9, align=TA_RIGHT)),
     ]]
-
-    header_table = Table(header_data, colWidths=[10*cm, 8*cm])
-    header_table.setStyle(TableStyle([
-        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-        ('LINEBELOW', (0, 0), (-1, 0), 1, colors.HexColor('#2d6a4f')),
-        ('BOTTOMPADDING', (0, 0), (-1, 0), 8),
+    hdr_table = Table(hdr_data, colWidths=[10*cm, 7.5*cm])
+    hdr_table.setStyle(TableStyle([
+        ('VALIGN', (0,0), (-1,-1), 'TOP'),
+        ('BACKGROUND', (1,0), (1,0), GREEN),
+        ('TEXTCOLOR', (1,0), (1,0), WHITE),
+        ('LEFTPADDING', (1,0), (1,0), 10),
+        ('RIGHTPADDING', (1,0), (1,0), 10),
+        ('TOPPADDING', (1,0), (1,0), 8),
+        ('BOTTOMPADDING', (1,0), (1,0), 8),
+        ('ROUNDEDCORNERS', [8]),
+        ('LINEBELOW', (0,0), (0,0), 1, GREEN),
+        ('BOTTOMPADDING', (0,0), (0,0), 8),
     ]))
-    story.append(header_table)
-    story.append(Spacer(1, 0.4*cm))
+    story.append(hdr_table)
+    story.append(Spacer(1, 0.5*cm))
 
+    # ── Adresse client ───────────────────────────────────────────────────────
     if customer:
-        cust_text = (f"<b>Facturer à:</b><br/>"
-                     f"{customer.get('first_name','')} {customer.get('last_name','')}<br/>"
-                     f"{customer.get('address','')} {customer.get('city','')}<br/>"
-                     f"Tél: {customer.get('phone','')}")
-        story.append(Paragraph(cust_text, small))
+        cust_lines = [f"<b>FACTURER À :</b>",
+                      f"<b>{customer.get('first_name','')} {customer.get('last_name','')}</b>"]
+        if customer.get('address'): cust_lines.append(customer['address'])
+        if customer.get('city'):    cust_lines.append(f"{customer['city']} {customer.get('province','')}")
+        if customer.get('phone'):   cust_lines.append(f"Tél : {customer['phone']}")
+        if customer.get('email'):   cust_lines.append(customer['email'])
+        cust_data = [[Paragraph('<br/>'.join(cust_lines), S(8)), '']]
+        cust_table = Table(cust_data, colWidths=[9*cm, 8.5*cm])
+        cust_table.setStyle(TableStyle([
+            ('BACKGROUND', (0,0), (0,0), GREEN_PALE),
+            ('LEFTPADDING', (0,0), (0,0), 10),
+            ('TOPPADDING', (0,0), (0,0), 8),
+            ('BOTTOMPADDING', (0,0), (0,0), 8),
+            ('LINEAFTER', (0,0), (0,0), 3, GREEN),
+        ]))
+        story.append(cust_table)
         story.append(Spacer(1, 0.4*cm))
 
-    col_headers = [
-        Paragraph('<b>ID</b>', small),
-        Paragraph('<b>Désignation</b>', small),
-        Paragraph('<b>P.U.</b>', small),
-        Paragraph('<b>Qté</b>', small),
-        Paragraph('<b>Prix</b>', small),
-        Paragraph('<b>Taxe</b>', small),
-        Paragraph('<b>Total</b>', small),
-    ]
-    table_data = [col_headers]
+    # ── Tableau des produits ─────────────────────────────────────────────────
+    tax_labels = {'tps_tvq':'TPS+TVQ','tps_only':'TPS','tvq_only':'TVQ','none':'—'}
+    th = S(8, bold=True, color=WHITE)
+    td = S(8)
+    tdr = S(8, align=TA_RIGHT)
+
+    rows = [[Paragraph(h, th) for h in ['ID', 'Désignation', 'P.U.', 'Qté', 'Prix', 'Taxe', 'Total']]]
     for item in items:
-        tax_label = {'tps_tvq': 'TPS+TVQ', 'tps_only': 'TPS', 'tvq_only': 'TVQ', 'none': 'Aucune'}.get(item['tax_type'], '')
-        tax_amt = round(item['tps_amount'] + item['tvq_amount'], 2)
-        table_data.append([
-            Paragraph(item['product_id'], small),
-            Paragraph(item['product_name'], small),
-            Paragraph(f"{item['unit_price']:.2f} $", small),
-            Paragraph(f"{item['quantity']}", small),
-            Paragraph(f"{item['unit_price']*item['quantity']:.2f} $", small),
-            Paragraph(f"{tax_amt:.2f} $\n({tax_label})", small),
-            Paragraph(f"{item['line_total']:.2f} $", small),
+        tax_amt = round((item.get('tps_amount') or 0) + (item.get('tvq_amount') or 0), 2)
+        prix    = round((item['unit_price'] or 0) * (item['quantity'] or 0), 2)
+        rows.append([
+            Paragraph(item['product_id'], td),
+            Paragraph(item['product_name'], td),
+            Paragraph(f"{item['unit_price']:.2f} $", tdr),
+            Paragraph(str(item['quantity']), S(8, align=TA_CENTER)),
+            Paragraph(f"{prix:.2f} $", tdr),
+            Paragraph(f"{tax_amt:.2f} $<br/><font size='7'>{tax_labels.get(item['tax_type'],'')}</font>", tdr),
+            Paragraph(f"<b>{item['line_total']:.2f} $</b>", tdr),
         ])
 
-    items_table = Table(table_data, colWidths=[2.5*cm, 5.5*cm, 2*cm, 1.5*cm, 2*cm, 2.5*cm, 2*cm])
+    col_w = [2.2*cm, 5.8*cm, 1.9*cm, 1.3*cm, 1.9*cm, 2.2*cm, 2.2*cm]
+    items_table = Table(rows, colWidths=col_w, repeatRows=1)
+    row_bgs = [WHITE, GREEN_PALE] * (len(rows) + 1)
     items_table.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2d6a4f')),
-        ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
-        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#f0f7f4')]),
-        ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#cccccc')),
-        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-        ('ALIGN', (2, 0), (-1, -1), 'RIGHT'),
+        ('BACKGROUND',  (0,0), (-1,0), GREEN),
+        ('TEXTCOLOR',   (0,0), (-1,0), WHITE),
+        ('FONTNAME',    (0,0), (-1,0), 'Helvetica-Bold'),
+        ('ROWBACKGROUNDS', (0,1), (-1,-1), [WHITE, GREEN_PALE]),
+        ('GRID',        (0,0), (-1,-1), 0.3, GREY_LINE),
+        ('VALIGN',      (0,0), (-1,-1), 'MIDDLE'),
+        ('TOPPADDING',  (0,0), (-1,-1), 5),
+        ('BOTTOMPADDING',(0,0),(-1,-1), 5),
+        ('ALIGN',       (2,0), (-1,-1), 'RIGHT'),
     ]))
     story.append(items_table)
     story.append(Spacer(1, 0.4*cm))
 
-    totals = [
-        ['Sous-total:', f"{inv['subtotal']:.2f} $"],
-        ['TPS (5%):', f"{inv['tps_amount']:.2f} $"],
-        ['TVQ (9.975%):', f"{inv['tvq_amount']:.2f} $"],
-        ['TOTAL:', f"{inv['total']:.2f} $"],
+    # ── Totaux ───────────────────────────────────────────────────────────────
+    totals_rows = [['Sous-total :', f"{inv['subtotal']:.2f} $"]]
+    discount_amount = inv.get('discount_amount') or 0
+    if discount_amount > 0:
+        lbl = inv.get('discount_label') or 'Rabais'
+        totals_rows.append([lbl + ' :', f"-{discount_amount:.2f} $"])
+    totals_rows.append(['TPS (5 %) :', f"{inv['tps_amount']:.2f} $"])
+    totals_rows.append(['TVQ (9,975 %) :', f"{inv['tvq_amount']:.2f} $"])
+    totals_rows.append(['TOTAL :', f"{inv['total']:.2f} $"])
+    total_row_idx = len(totals_rows) - 1
+
+    tot_table = Table([[Paragraph(k, S(8, align=TA_RIGHT)), Paragraph(v, S(8, align=TA_RIGHT))]
+                       for k,v in totals_rows], colWidths=[4.5*cm, 3*cm])
+    style_cmds = [
+        ('ALIGN',         (0,0), (-1,-1), 'RIGHT'),
+        ('TOPPADDING',    (0,0), (-1,-1), 4),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 4),
+        ('LINEABOVE',     (0, total_row_idx), (-1, total_row_idx), 1, GREEN),
+        ('BACKGROUND',    (0, total_row_idx), (-1, total_row_idx), GREEN_DARK),
+        ('TEXTCOLOR',     (0, total_row_idx), (-1, total_row_idx), WHITE),
+        ('FONTNAME',      (0, total_row_idx), (-1, total_row_idx), 'Helvetica-Bold'),
+        ('FONTSIZE',      (0, total_row_idx), (-1, total_row_idx), 10),
     ]
-    totals_table = Table(totals, colWidths=[4*cm, 3*cm])
-    totals_table.setStyle(TableStyle([
-        ('ALIGN', (0, 0), (-1, -1), 'RIGHT'),
-        ('FONTNAME', (0, 3), (-1, 3), 'Helvetica-Bold'),
-        ('FONTSIZE', (0, 3), (-1, 3), 11),
-        ('BACKGROUND', (0, 3), (-1, 3), colors.HexColor('#2d6a4f')),
-        ('TEXTCOLOR', (0, 3), (-1, 3), colors.white),
-        ('LINEABOVE', (0, 3), (-1, 3), 1, colors.HexColor('#2d6a4f')),
-        ('TOPPADDING', (0, 0), (-1, -1), 4),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
-    ]))
-    totals_wrapper = Table([[Paragraph(''), totals_table]], colWidths=[11*cm, 7*cm])
-    story.append(totals_wrapper)
+    if discount_amount > 0:
+        style_cmds.append(('TEXTCOLOR', (0,1), (-1,1), colors.HexColor('#dc2626')))
+    tot_table.setStyle(TableStyle(style_cmds))
+
+    wrap = Table([[Paragraph('', S(8)), tot_table]], colWidths=[10*cm, 7.5*cm])
+    story.append(wrap)
 
     if inv.get('notes'):
         story.append(Spacer(1, 0.4*cm))
-        story.append(Paragraph(f"<b>Notes:</b> {inv['notes']}", small))
+        story.append(Paragraph(f"<b>Notes :</b> {inv['notes']}", S(8)))
 
-    story.append(Spacer(1, 1*cm))
-    story.append(Paragraph("Merci pour votre confiance!", center))
-
+    story.append(Spacer(1, 1.2*cm))
+    story.append(Paragraph("— Merci pour votre confiance ! —", S(9, align=TA_CENTER, color=GREEN)))
     doc.build(story)
 
 
@@ -968,7 +1138,7 @@ def accounting():
 def api_create_accounting():
     data = request.json
     conn = get_db()
-    entry_num = f"ENT-{datetime.now().strftime('%Y%m%d')}-{str(uuid.uuid4())[:4].upper()}"
+    entry_num = gen_accounting_id(conn)
     try:
         conn.execute('''INSERT INTO accounting_entries
             (entry_number, supplier, description, date, subtotal,

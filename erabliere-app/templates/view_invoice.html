@@ -123,6 +123,16 @@
         <td class="text-muted" style="padding:5px 12px">Sous-total:</td>
         <td class="text-end fw-semibold" style="padding:5px 12px">{{ "%.2f"|format(invoice.subtotal) }} $</td>
       </tr>
+      {% if invoice.discount_amount and invoice.discount_amount > 0 %}
+      <tr>
+        <td class="text-warning" style="padding:5px 12px">
+          <i class="bi bi-percent me-1"></i>{{ invoice.discount_label or 'Rabais abonnement' }}:
+        </td>
+        <td class="text-end text-warning fw-semibold" style="padding:5px 12px">
+          -{{ "%.2f"|format(invoice.discount_amount) }} $
+        </td>
+      </tr>
+      {% endif %}
       <tr>
         <td class="text-muted" style="padding:5px 12px">TPS (5%):</td>
         <td class="text-end" style="padding:5px 12px">{{ "%.2f"|format(invoice.tps_amount) }} $</td>
