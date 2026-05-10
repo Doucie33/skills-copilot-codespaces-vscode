@@ -24,16 +24,15 @@ from reportlab.lib.enums import TA_CENTER, TA_RIGHT, TA_LEFT
 import sqlite3
 
 # ── Chemins portables ─────────────────────────────────────────────────────────
-# Sur clé USB : app.py est dans  {USB}/Erabliere/app/
-#               données dans     {USB}/Erabliere/data/  (partagées Win+Linux)
-# En développement : app.py est directement dans erabliere-app/
+# lancer.py définit ERABLIERE_DATA_DIR pour pointer vers la clé USB.
+# En développement direct, les données restent dans erabliere-app/data/.
 APP_DIR  = os.path.dirname(os.path.abspath(__file__))
-# Détecte si on est dans un sous-dossier "app" (mode clé USB)
-if os.path.basename(APP_DIR).lower() == 'app':
-    BASE_DIR = os.path.dirname(APP_DIR)      # remonte dans Erabliere/
+if os.environ.get('ERABLIERE_DATA_DIR'):
+    DATA_DIR = os.environ['ERABLIERE_DATA_DIR']
+elif os.path.basename(APP_DIR).lower() == 'app':
+    DATA_DIR = os.path.join(os.path.dirname(APP_DIR), 'data')
 else:
-    BASE_DIR = APP_DIR                        # mode développement
-DATA_DIR   = os.path.join(BASE_DIR, 'data')
+    DATA_DIR = os.path.join(APP_DIR, 'data')
 DB_PATH    = os.path.join(DATA_DIR, 'erabliere.db')
 PDF_DIR    = os.path.join(DATA_DIR, 'pdfs')
 UPLOAD_DIR = os.path.join(APP_DIR, 'static', 'uploads')
