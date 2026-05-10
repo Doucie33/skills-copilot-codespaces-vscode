@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8"/>
+<title>Guide — Clé USB portable Érablière</title>
+<style>
+  body { font-family: 'Segoe UI', sans-serif; max-width: 860px; margin: 40px auto; color: #2c3e50; line-height: 1.6; padding: 0 20px; }
+  h1 { color: #1b4332; border-bottom: 3px solid #2d6a4f; padding-bottom: 10px; }
+  h2 { color: #2d6a4f; margin-top: 36px; }
+  h3 { color: #555; }
+  .card { background: #f0f7f4; border-left: 4px solid #2d6a4f; border-radius: 8px; padding: 16px 20px; margin: 16px 0; }
+  .warning { background: #fff8e1; border-left-color: #f59e0b; }
+  .danger  { background: #fef2f2; border-left-color: #ef4444; }
+  .success { background: #f0fdf4; border-left-color: #22c55e; }
+  code { background: #1b4332; color: #86efac; padding: 2px 8px; border-radius: 4px; font-size: 0.9em; }
+  pre  { background: #1b4332; color: #86efac; padding: 16px; border-radius: 8px; overflow-x: auto; font-size: 0.85em; }
+  .step { display: flex; gap: 16px; margin: 20px 0; }
+  .step-num { background: #2d6a4f; color: #fff; width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; flex-shrink: 0; font-size: 1.1rem; }
+  .step-body { flex: 1; }
+  table { width: 100%; border-collapse: collapse; margin: 16px 0; }
+  th { background: #2d6a4f; color: #fff; padding: 10px 14px; text-align: left; }
+  td { padding: 8px 14px; border-bottom: 1px solid #e2e8f0; }
+  tr:nth-child(even) td { background: #f8fafc; }
+  .badge { display: inline-block; background: #2d6a4f; color: #fff; padding: 2px 10px; border-radius: 20px; font-size: 0.8em; }
+  .badge.win { background: #0078d4; }
+  .badge.linux { background: #e95420; }
+  .badge.both { background: #7c3aed; }
+  img { max-width: 100%; }
+</style>
+</head>
+<body>
+
+<h1>🍁 Érablière — Guide de la clé USB portable</h1>
+
+<div class="card success">
+  <strong>✅ Objectif :</strong> Utiliser le logiciel depuis n'importe quel ordinateur
+  (Windows ou Linux) sans rien installer — branchez la clé, double-cliquez, c'est lancé.
+</div>
+
+<hr/>
+
+<h2>📋 Méthodes disponibles</h2>
+
+<table>
+  <tr>
+    <th>Méthode</th><th>Difficulté</th><th>Résultat</th><th>Taille USB</th>
+  </tr>
+  <tr>
+    <td><strong>A — Python embarqué</strong> <span class="badge win">Windows</span></td>
+    <td>⭐⭐</td>
+    <td>Dossier avec Python portable inclus</td>
+    <td>~150 Mo</td>
+  </tr>
+  <tr>
+    <td><strong>B — Environnement virtuel</strong> <span class="badge linux">Linux</span></td>
+    <td>⭐⭐</td>
+    <td>Dossier avec venv inclus</td>
+    <td>~80 Mo</td>
+  </tr>
+  <tr>
+    <td><strong>C — Exécutable PyInstaller</strong> <span class="badge both">Windows/Linux</span></td>
+    <td>⭐⭐⭐</td>
+    <td>.exe ou binaire autonome, zéro dépendance</td>
+    <td>~100 Mo</td>
+  </tr>
+</table>
+
+<h2>🪟 Méthode A — Windows (Recommandée)</h2>
+
+<div class="step">
+  <div class="step-num">1</div>
+  <div class="step-body">
+    <strong>Préparez la clé USB</strong><br/>
+    Formatez la clé en <strong>exFAT</strong> (compatible Windows + Linux) ou FAT32.
+    <div class="card warning">⚠️ La clé doit avoir au moins <strong>500 Mo</strong> d'espace libre.</div>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">2</div>
+  <div class="step-body">
+    <strong>Lancez le script de création</strong><br/>
+    Sur votre ordinateur Windows (avec connexion Internet) :
+    <pre>usb_setup\CREER_CLE_USB_WINDOWS.bat</pre>
+    Double-cliquez sur ce fichier. Il va :
+    <ul>
+      <li>Télécharger Python embarqué (officiel, python.org)</li>
+      <li>Installer Flask, ReportLab, Pillow automatiquement</li>
+      <li>Copier l'application sur la clé</li>
+      <li>Créer le lanceur <code>LANCER_ERABLIERE.bat</code></li>
+    </ul>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">3</div>
+  <div class="step-body">
+    <strong>Structure sur la clé USB après création</strong>
+    <pre>Clé USB:\Erabliere\
+├── LANCER_ERABLIERE.bat   ← Double-clic pour démarrer
+├── LANCER_AVEC_CONSOLE.bat ← Version debug
+├── LIRE_MOI.txt
+├── python\                ← Python portable (ne pas toucher)
+│   ├── python.exe
+│   └── ...
+├── app\                   ← L'application
+│   ├── app.py
+│   ├── static\
+│   └── templates\
+└── data\                  ← VOS DONNÉES (sauvegarder!)
+    ├── erabliere.db
+    └── pdfs\</pre>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">4</div>
+  <div class="step-body">
+    <strong>Utilisation quotidienne</strong><br/>
+    <ol>
+      <li>Branchez la clé USB</li>
+      <li>Double-cliquez sur <code>LANCER_ERABLIERE.bat</code></li>
+      <li>Le navigateur s'ouvre automatiquement sur <code>http://localhost:5000</code></li>
+      <li>Travaillez normalement</li>
+      <li>Fermez la fenêtre noire (Ctrl+C) pour quitter</li>
+      <li>Retirez la clé USB en toute sécurité</li>
+    </ol>
+  </div>
+</div>
+
+<hr/>
+
+<h2>🐧 Méthode B — Linux / Kubuntu (Recommandée)</h2>
+
+<div class="step">
+  <div class="step-num">1</div>
+  <div class="step-body">
+    <strong>Trouvez le point de montage de votre clé</strong>
+    <pre>ls /media/$USER/</pre>
+    Le nom de votre clé apparaîtra (ex: <code>MACLÉ</code>, <code>USB8GO</code>)
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">2</div>
+  <div class="step-body">
+    <strong>Lancez le script de création</strong>
+    <pre>cd usb_setup
+chmod +x CREER_CLE_USB_LINUX.sh
+./CREER_CLE_USB_LINUX.sh</pre>
+    Entrez le chemin complet : <code>/media/votre_nom/NOM_CLE</code>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">3</div>
+  <div class="step-body">
+    <strong>Utilisation quotidienne</strong>
+    <pre>cd /media/$USER/NOM_CLE/Erabliere
+./LANCER_ERABLIERE.sh</pre>
+    Ou double-cliquez sur <code>Erabliere.desktop</code> depuis le gestionnaire de fichiers.
+  </div>
+</div>
+
+<hr/>
+
+<h2>⚡ Méthode C — Exécutable autonome (.exe / binaire)</h2>
+
+<div class="card">
+  Cette méthode crée un <strong>exécutable unique</strong> qui contient Python + toutes les
+  bibliothèques. L'utilisateur n'a <strong>absolument rien à installer</strong>, même pas Python.
+</div>
+
+<h3>Sur Windows :</h3>
+<pre>usb_setup\CONSTRUIRE_EXE_WINDOWS.bat</pre>
+Résultat : <code>dist\Erabliere\Erabliere.exe</code> → copiez ce dossier sur la clé.
+
+<h3>Sur Linux :</h3>
+<pre>cd usb_setup
+./CONSTRUIRE_BINAIRE_LINUX.sh</pre>
+Résultat : <code>dist/Erabliere/Erabliere</code> → copiez ce dossier sur la clé.
+
+<div class="card warning">
+  ⚠️ <strong>Important :</strong> Un exécutable Windows (.exe) ne fonctionne que sur Windows,
+  et un binaire Linux ne fonctionne que sur Linux. Compilez sur chaque OS séparément
+  si vous utilisez les deux systèmes.
+</div>
+
+<hr/>
+
+<h2>💾 Sauvegarde de vos données</h2>
+
+<div class="card danger">
+  ⚠️ <strong>CRITIQUE :</strong> Toutes vos données sont dans le fichier
+  <code>data\erabliere.db</code>.<br/>
+  Une clé USB peut tomber en panne sans avertissement. Sauvegardez régulièrement !
+</div>
+
+<h3>Stratégie recommandée :</h3>
+<ul>
+  <li><strong>Hebdomadaire :</strong> Copiez le dossier <code>data\</code> sur votre ordinateur</li>
+  <li><strong>Mensuelle :</strong> Copiez sur un second disque ou un service cloud</li>
+  <li><strong>Automatique :</strong> Utilisez un script de sauvegarde (voir ci-dessous)</li>
+</ul>
+
+<h3>Sauvegarde rapide (Windows) :</h3>
+<pre>:: Copiez dans Mes Documents
+xcopy /Y "E:\Erabliere\data\erabliere.db" "%USERPROFILE%\Documents\sauvegarde_erabliere\"</pre>
+
+<h3>Sauvegarde rapide (Linux) :</h3>
+<pre>cp /media/$USER/MACLÉ/Erabliere/data/erabliere.db ~/sauvegarde_erabliere_$(date +%Y%m%d).db</pre>
+
+<hr/>
+
+<h2>🔧 Résolution de problèmes</h2>
+
+<table>
+  <tr><th>Problème</th><th>Solution</th></tr>
+  <tr>
+    <td>Le navigateur ne s'ouvre pas</td>
+    <td>Tapez manuellement <code>http://localhost:5000</code> dans Chrome/Firefox</td>
+  </tr>
+  <tr>
+    <td>Port 5000 occupé</td>
+    <td>Dans <code>app.py</code>, dernière ligne : changer <code>port=5000</code> en <code>port=5001</code></td>
+  </tr>
+  <tr>
+    <td>Antivirus bloque le .exe</td>
+    <td>Ajouter une exception pour le dossier Erabliere\ (faux positif PyInstaller connu)</td>
+  </tr>
+  <tr>
+    <td>Erreur "Permission denied" Linux</td>
+    <td><code>chmod +x LANCER_ERABLIERE.sh</code> puis relancer</td>
+  </tr>
+  <tr>
+    <td>Base de données corrompue</td>
+    <td>Restaurer depuis la dernière sauvegarde du fichier <code>erabliere.db</code></td>
+  </tr>
+  <tr>
+    <td>Accès depuis un autre PC sur le réseau</td>
+    <td>Dans <code>app.py</code> : changer <code>host='127.0.0.1'</code> en <code>host='0.0.0.0'</code></td>
+  </tr>
+</table>
+
+<hr/>
+
+<h2>🌐 Accès depuis plusieurs postes (réseau local)</h2>
+
+<div class="card">
+  Si vous voulez accéder au logiciel depuis <strong>plusieurs ordinateurs en même temps</strong>
+  sur votre réseau Wi-Fi/LAN (ex: caisse + bureau) :
+  <ol>
+    <li>Modifiez <code>app.py</code> dernière ligne : <code>host='0.0.0.0'</code></li>
+    <li>Lancez le logiciel sur l'ordinateur principal</li>
+    <li>Sur les autres postes, ouvrez : <code>http://192.168.X.X:5000</code><br/>
+        (remplacez par l'IP de l'ordinateur principal)</li>
+  </ol>
+</div>
+
+<hr/>
+<p style="text-align:center; color:#999; font-size:0.85em">
+  Logiciel de gestion d'Érablière — Version portable USB
+</p>
+</body>
+</html>

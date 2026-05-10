@@ -1,8 +1,11 @@
 import os
+import sys
 import uuid
 import json
 import csv
 import io
+import threading
+import webbrowser
 from datetime import datetime, date
 from flask import (
     Flask, render_template, request, jsonify,
@@ -20,10 +23,22 @@ from reportlab.lib.units import inch, cm
 from reportlab.lib.enums import TA_CENTER, TA_RIGHT, TA_LEFT
 import sqlite3
 
-app = Flask(__name__)
+# ── Chemins portables : tout relatif au dossier de app.py ────────────────────
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DATA_DIR = os.path.join(BASE_DIR, 'data')
+DB_PATH  = os.path.join(DATA_DIR, 'erabliere.db')
+PDF_DIR  = os.path.join(DATA_DIR, 'pdfs')
+UPLOAD_DIR = os.path.join(BASE_DIR, 'static', 'uploads')
+
+os.makedirs(DATA_DIR, exist_ok=True)
+os.makedirs(PDF_DIR, exist_ok=True)
+os.makedirs(UPLOAD_DIR, exist_ok=True)
+
+app = Flask(__name__, template_folder=os.path.join(BASE_DIR, 'templates'),
+            static_folder=os.path.join(BASE_DIR, 'static'))
 app.secret_key = 'erabliere-maple-secret-2024'
 app.jinja_env.globals.update(enumerate=enumerate, now=datetime.now)
-app.config['UPLOAD_FOLDER'] = 'static/uploads'
+app.config['UPLOAD_FOLDER'] = UPLOAD_DIR
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
 
 TPS_RATE = 0.05
@@ -31,16 +46,13 @@ TVQ_RATE = 0.09975
 
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
 
-os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
-os.makedirs('pdfs', exist_ok=True)
-
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 
 def get_db():
-    conn = sqlite3.connect('erabliere.db')
+    conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     conn.execute('PRAGMA foreign_keys = ON')
     return conn
@@ -1081,6 +1093,23 @@ def api_bestsellers():
     return jsonify(rows)
 
 
+def open_browser():
+    """Ouvre le navigateur automatiquement après démarrage du serveur."""
+    import time
+    time.sleep(1.5)
+    webbrowser.open('http://localhost:5000')
+
 if __name__ == '__main__':
     init_db()
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    # En mode portable (USB), on ouvre le navigateur automatiquement
+    if not os.environ.get('ERABLIERE_NO_BROWSER'):
+        t = threading.Thread(target=open_browser, daemon=True)
+        t.start()
+    print("\n" + "="*50)
+    print("  ÉRABLIÈRE — Logiciel de gestion")
+    print("="*50)
+    print(f"  Adresse : http://localhost:5000")
+    print(f"  Données : {DATA_DIR}")
+    print("  Appuyez sur Ctrl+C pour quitter.")
+    print("="*50 + "\n")
+    app.run(debug=False, host='127.0.0.1', port=5000)
