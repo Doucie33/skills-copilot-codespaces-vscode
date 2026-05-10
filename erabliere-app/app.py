@@ -504,9 +504,14 @@ def api_delete_product(product_id):
 def customers():
     conn = get_db()
     custs = rows_to_list(conn.execute('''
-        SELECT c.*, s.name as subscription_name
+        SELECT c.*, s.name as subscription_name,
+               MAX(inv.date)        AS last_purchase,
+               COUNT(inv.id)        AS invoice_count,
+               COALESCE(SUM(inv.total), 0) AS total_spent
         FROM customers c
-        LEFT JOIN subscriptions s ON s.subscription_id=c.subscription_id
+        LEFT JOIN subscriptions s ON s.subscription_id = c.subscription_id
+        LEFT JOIN invoices inv    ON inv.customer_id   = c.customer_id
+        GROUP BY c.id
         ORDER BY c.last_name, c.first_name''').fetchall())
     subs = rows_to_list(conn.execute('SELECT * FROM subscriptions WHERE active=1').fetchall())
     company = row_to_dict(conn.execute('SELECT * FROM company_settings WHERE id=1').fetchone())
@@ -626,13 +631,14 @@ def customer_history(customer_id):
 
         top_products = rows_to_list(conn.execute('''
             SELECT ii.product_name,
-                   SUM(ii.quantity) as total_qty,
+                   SUM(ii.quantity)   as total_qty,
                    SUM(ii.line_total) as total_spent
             FROM invoice_items ii
-            JOIN invoices inv ON inv.invoice_number=ii.invoice_number
-            WHERE inv.customer_id=?
+            JOIN invoices inv ON inv.invoice_number = ii.invoice_number
+            WHERE inv.customer_id = ?
             GROUP BY ii.product_id, ii.product_name
             ORDER BY total_qty DESC
+            LIMIT 3
         ''', (customer_id,)).fetchall())
 
         sub = None
@@ -644,11 +650,19 @@ def customer_history(customer_id):
         company = row_to_dict(conn.execute('SELECT * FROM company_settings WHERE id=1').fetchone())
         conn.close()
 
-        total_spent = sum(float(inv.get('total', 0)) for inv in invoices)
+        total_spent   = sum(float(inv.get('total', 0)) for inv in invoices)
+        first_purchase = invoices[-1]['date'] if invoices else None
+        last_purchase  = invoices[0]['date']  if invoices else None
+        avg_order      = round(total_spent / len(invoices), 2) if invoices else 0
+
         return render_template('customer_history.html',
                                customer=customer, invoices=invoices,
                                top_products=top_products, sub=sub,
-                               total_spent=total_spent, company=company)
+                               total_spent=total_spent,
+                               first_purchase=first_purchase,
+                               last_purchase=last_purchase,
+                               avg_order=avg_order,
+                               company=company)
     except Exception as e:
         app.logger.error(f"customer_history error: {e}")
         return f"<h2>Erreur serveur</h2><pre>{e}</pre><a href='/customers'>Retour</a>", 500
