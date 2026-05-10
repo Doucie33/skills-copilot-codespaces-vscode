@@ -1,0 +1,151 @@
+{% extends "base.html" %}
+{% block title %}Facture {{ invoice.invoice_number }}{% endblock %}
+
+{% block content %}
+<div class="page-header no-print">
+  <h1 class="page-title"><i class="bi bi-receipt"></i> Facture</h1>
+  <div class="d-flex gap-2 no-print">
+    <a href="{{ url_for('invoices') }}" class="btn btn-outline-secondary">
+      <i class="bi bi-arrow-left me-1"></i>Retour
+    </a>
+    <button class="btn btn-outline-primary" onclick="window.print()">
+      <i class="bi bi-printer me-1"></i>Imprimer
+    </button>
+    <a href="{{ url_for('invoice_pdf', invoice_number=invoice.invoice_number) }}"
+       class="btn btn-primary">
+      <i class="bi bi-file-earmark-pdf me-1"></i>Télécharger PDF
+    </a>
+  </div>
+</div>
+
+<div class="invoice-preview">
+  <!-- Header -->
+  <table style="width:100%;margin-bottom:24px">
+    <tr>
+      <td style="width:55%;vertical-align:top">
+        {% if company.logo_path %}
+        <img src="{{ url_for('static', filename=company.logo_path) }}"
+             style="max-height:70px;max-width:180px;object-fit:contain;margin-bottom:10px"/>
+        {% else %}
+        <div style="font-size:2.5rem">🍁</div>
+        {% endif %}
+        <h4 style="color:#1b4332;margin:8px 0 4px">{{ company.name }}</h4>
+        <div class="text-muted small">
+          {{ company.address }}{% if company.city %}, {{ company.city }}{% endif %}
+          {% if company.province %} {{ company.province }}{% endif %}
+          {% if company.postal_code %} {{ company.postal_code }}{% endif %}<br>
+          {% if company.phone %}Tél: {{ company.phone }}<br>{% endif %}
+          {% if company.email %}{{ company.email }}<br>{% endif %}
+          {% if company.tps_number %}TPS: {{ company.tps_number }}{% endif %}
+          {% if company.tvq_number %} | TVQ: {{ company.tvq_number }}{% endif %}
+        </div>
+      </td>
+      <td style="text-align:right;vertical-align:top">
+        <div style="background:#2d6a4f;color:#fff;padding:20px 24px;border-radius:10px;display:inline-block;text-align:right">
+          <div style="font-size:1.8rem;font-weight:800;letter-spacing:2px">FACTURE</div>
+          <div style="margin-top:8px">
+            <strong>N°:</strong> {{ invoice.invoice_number }}<br>
+            <strong>Date:</strong> {{ invoice.date }}<br>
+            <strong>Statut:</strong>
+            <span style="background:rgba(255,255,255,0.2);padding:2px 10px;border-radius:20px">
+              {{ invoice.status }}
+            </span>
+          </div>
+        </div>
+      </td>
+    </tr>
+  </table>
+
+  <!-- Bill to -->
+  {% if customer %}
+  <div style="background:#f0f7f4;border-radius:10px;padding:14px 18px;margin-bottom:24px;border-left:4px solid #2d6a4f">
+    <div class="fw-bold small text-muted mb-1">FACTURER À:</div>
+    <div class="fw-semibold">{{ customer.first_name }} {{ customer.last_name }}</div>
+    <div class="small text-muted">
+      {% if customer.address %}{{ customer.address }}{% endif %}
+      {% if customer.city %}, {{ customer.city }}{% endif %}
+      {% if customer.province %} {{ customer.province }}{% endif %}
+      {% if customer.postal_code %} {{ customer.postal_code }}{% endif %}
+      {% if customer.phone %}<br>Tél: {{ customer.phone }}{% endif %}
+      {% if customer.email %}<br>{{ customer.email }}{% endif %}
+    </div>
+    <div class="mt-1"><code class="small text-muted">ID: {{ customer.customer_id }}</code></div>
+  </div>
+  {% endif %}
+
+  <!-- Items table -->
+  <table class="table invoice-items-table" style="width:100%;margin-bottom:0">
+    <thead>
+      <tr>
+        <th style="width:12%">ID</th>
+        <th>Désignation</th>
+        <th class="text-end" style="width:10%">P.U.</th>
+        <th class="text-center" style="width:8%">Qté</th>
+        <th class="text-end" style="width:10%">Prix</th>
+        <th class="text-end" style="width:14%">Taxe</th>
+        <th class="text-end" style="width:12%">Total</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for item in items %}
+      <tr>
+        <td><code class="small">{{ item.product_id }}</code></td>
+        <td>
+          <div>{{ item.product_name }}</div>
+          {% if item.tax_type != 'none' %}
+          <small class="badge badge-tax tax-{{ item.tax_type }}">
+            {{ {'tps_tvq':'TPS+TVQ','tps_only':'TPS seul.','tvq_only':'TVQ seul.'}[item.tax_type] }}
+          </small>
+          {% endif %}
+        </td>
+        <td class="text-end">{{ "%.2f"|format(item.unit_price) }} $</td>
+        <td class="text-center">{{ item.quantity }}</td>
+        <td class="text-end">{{ "%.2f"|format(item.unit_price * item.quantity) }} $</td>
+        <td class="text-end">
+          {{ "%.2f"|format(item.tps_amount + item.tvq_amount) }} $
+          {% if item.tps_amount > 0 or item.tvq_amount > 0 %}
+          <div class="text-muted" style="font-size:0.7rem">
+            {% if item.tps_amount > 0 %}TPS: {{ "%.2f"|format(item.tps_amount) }} ${% endif %}
+            {% if item.tvq_amount > 0 %} TVQ: {{ "%.2f"|format(item.tvq_amount) }} ${% endif %}
+          </div>
+          {% endif %}
+        </td>
+        <td class="text-end fw-bold">{{ "%.2f"|format(item.line_total) }} $</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <!-- Totals -->
+  <div class="d-flex justify-content-end mt-3">
+    <table class="invoice-totals" style="min-width:300px">
+      <tr>
+        <td class="text-muted" style="padding:5px 12px">Sous-total:</td>
+        <td class="text-end fw-semibold" style="padding:5px 12px">{{ "%.2f"|format(invoice.subtotal) }} $</td>
+      </tr>
+      <tr>
+        <td class="text-muted" style="padding:5px 12px">TPS (5%):</td>
+        <td class="text-end" style="padding:5px 12px">{{ "%.2f"|format(invoice.tps_amount) }} $</td>
+      </tr>
+      <tr>
+        <td class="text-muted" style="padding:5px 12px">TVQ (9,975%):</td>
+        <td class="text-end" style="padding:5px 12px">{{ "%.2f"|format(invoice.tvq_amount) }} $</td>
+      </tr>
+      <tr class="grand-total-row">
+        <td style="padding:10px 12px"><strong>TOTAL</strong></td>
+        <td class="text-end" style="padding:10px 12px"><strong>{{ "%.2f"|format(invoice.total) }} $</strong></td>
+      </tr>
+    </table>
+  </div>
+
+  {% if invoice.notes %}
+  <div class="mt-4 small text-muted">
+    <strong>Notes:</strong> {{ invoice.notes }}
+  </div>
+  {% endif %}
+
+  <div class="text-center text-muted mt-5 small">
+    — Merci pour votre confiance! —
+  </div>
+</div>
+{% endblock %}

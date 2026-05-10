@@ -1,0 +1,205 @@
+{% extends "base.html" %}
+{% block title %}Produits{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1 class="page-title"><i class="bi bi-box-seam"></i> Produits</h1>
+  <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#productModal" onclick="openNew()">
+    <i class="bi bi-plus-lg me-1"></i>Nouveau produit
+  </button>
+</div>
+
+<div class="card">
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-hover mb-0" id="productsTable">
+        <thead>
+          <tr>
+            <th>ID Produit</th><th>Nom</th><th>Catégorie</th>
+            <th>Unité</th><th class="text-end">Prix unitaire</th>
+            <th class="text-center">Taxes</th><th class="text-center">Statut</th><th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for p in products %}
+          <tr id="row-{{ p.product_id }}">
+            <td><code class="small text-success">{{ p.product_id }}</code></td>
+            <td>
+              <div class="fw-semibold">{{ p.name }}</div>
+              {% if p.description %}<div class="text-muted small">{{ p.description }}</div>{% endif %}
+            </td>
+            <td>{{ p.category or '—' }}</td>
+            <td>{{ p.unit }}</td>
+            <td class="text-end fw-semibold">{{ "%.2f"|format(p.price) }} $</td>
+            <td class="text-center">
+              <span class="badge badge-tax tax-{{ p.tax_type }}">
+                {{ {'tps_tvq':'TPS+TVQ','tps_only':'TPS seul.','tvq_only':'TVQ seul.','none':'Aucune'}[p.tax_type] }}
+              </span>
+            </td>
+            <td class="text-center">
+              <span class="badge bg-{{ 'success' if p.active else 'secondary' }}">
+                {{ 'Actif' if p.active else 'Inactif' }}
+              </span>
+            </td>
+            <td>
+              <div class="d-flex gap-1 justify-content-end">
+                <button class="btn btn-sm btn-outline-primary" onclick="editProduct({{ p|tojson }})">
+                  <i class="bi bi-pencil"></i>
+                </button>
+                <button class="btn btn-sm btn-outline-danger" onclick="deleteProduct('{{ p.product_id }}')">
+                  <i class="bi bi-trash"></i>
+                </button>
+              </div>
+            </td>
+          </tr>
+          {% else %}
+          <tr><td colspan="8" class="text-center text-muted py-5">
+            <i class="bi bi-box-seam fs-2 d-block mb-2 text-muted"></i>
+            Aucun produit. Créez votre premier produit.
+          </td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- Modal -->
+<div class="modal fade" id="productModal" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="modalTitle">Nouveau produit</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="editProductId"/>
+        <div class="row g-3">
+          <div class="col-md-8">
+            <label class="form-label">Nom du produit *</label>
+            <input type="text" class="form-control" id="prodName" placeholder="Ex: Sirop d'érable 540ml"/>
+          </div>
+          <div class="col-md-4">
+            <label class="form-label">Prix unitaire ($) *</label>
+            <input type="number" class="form-control" id="prodPrice" step="0.01" min="0" placeholder="0.00"/>
+          </div>
+          <div class="col-md-4">
+            <label class="form-label">Catégorie</label>
+            <input type="text" class="form-control" id="prodCategory" list="categoryList" placeholder="Ex: Sirop"/>
+            <datalist id="categoryList">
+              <option value="Sirop d'érable"/>
+              <option value="Beurre d'érable"/>
+              <option value="Sucre d'érable"/>
+              <option value="Tire sur la neige"/>
+              <option value="Confiture"/>
+              <option value="Abonnement"/>
+              <option value="Service"/>
+            </datalist>
+          </div>
+          <div class="col-md-4">
+            <label class="form-label">Unité</label>
+            <select class="form-select" id="prodUnit">
+              <option value="unité">Unité</option>
+              <option value="litre">Litre</option>
+              <option value="ml">ml</option>
+              <option value="kg">kg</option>
+              <option value="g">g</option>
+              <option value="boîte">Boîte</option>
+              <option value="caisse">Caisse</option>
+            </select>
+          </div>
+          <div class="col-md-4">
+            <label class="form-label">Type de taxe</label>
+            <select class="form-select" id="prodTaxType">
+              <option value="tps_tvq">TPS + TVQ</option>
+              <option value="tps_only">TPS seulement (5%)</option>
+              <option value="tvq_only">TVQ seulement (9.975%)</option>
+              <option value="none">Aucune taxe</option>
+            </select>
+          </div>
+          <div class="col-12">
+            <label class="form-label">Description</label>
+            <textarea class="form-control" id="prodDesc" rows="2" placeholder="Description optionnelle"></textarea>
+          </div>
+          <div class="col-12">
+            <div class="form-check form-switch">
+              <input class="form-check-input" type="checkbox" id="prodActive" checked/>
+              <label class="form-check-label" for="prodActive">Produit actif</label>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+        <button type="button" class="btn btn-primary" onclick="saveProduct()">
+          <i class="bi bi-check-lg me-1"></i>Enregistrer
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+$(function() {
+  $('#productsTable').DataTable({
+    language: { url: 'https://cdn.datatables.net/plug-ins/1.13.8/i18n/fr-FR.json' },
+    order: [[1, 'asc']]
+  });
+});
+
+function openNew() {
+  document.getElementById('modalTitle').textContent = 'Nouveau produit';
+  document.getElementById('editProductId').value = '';
+  document.getElementById('prodName').value = '';
+  document.getElementById('prodPrice').value = '';
+  document.getElementById('prodCategory').value = '';
+  document.getElementById('prodUnit').value = 'unité';
+  document.getElementById('prodTaxType').value = 'tps_tvq';
+  document.getElementById('prodDesc').value = '';
+  document.getElementById('prodActive').checked = true;
+}
+
+function editProduct(p) {
+  document.getElementById('modalTitle').textContent = 'Modifier le produit';
+  document.getElementById('editProductId').value = p.product_id;
+  document.getElementById('prodName').value = p.name;
+  document.getElementById('prodPrice').value = p.price;
+  document.getElementById('prodCategory').value = p.category || '';
+  document.getElementById('prodUnit').value = p.unit || 'unité';
+  document.getElementById('prodTaxType').value = p.tax_type;
+  document.getElementById('prodDesc').value = p.description || '';
+  document.getElementById('prodActive').checked = p.active == 1;
+  new bootstrap.Modal(document.getElementById('productModal')).show();
+}
+
+async function saveProduct() {
+  const pid = document.getElementById('editProductId').value;
+  const data = {
+    name: document.getElementById('prodName').value.trim(),
+    price: document.getElementById('prodPrice').value,
+    category: document.getElementById('prodCategory').value.trim(),
+    unit: document.getElementById('prodUnit').value,
+    tax_type: document.getElementById('prodTaxType').value,
+    description: document.getElementById('prodDesc').value.trim(),
+    active: document.getElementById('prodActive').checked ? 1 : 0,
+  };
+  if (!data.name || !data.price) { alert('Nom et prix obligatoires.'); return; }
+
+  const url = pid ? `/api/products/${pid}` : '/api/products';
+  const method = pid ? 'PUT' : 'POST';
+  const res = await fetch(url, { method, headers: {'Content-Type':'application/json'}, body: JSON.stringify(data) });
+  const json = await res.json();
+  if (json.success) location.reload();
+  else alert('Erreur: ' + json.error);
+}
+
+async function deleteProduct(pid) {
+  if (!confirm('Désactiver ce produit?')) return;
+  const res = await fetch(`/api/products/${pid}`, { method: 'DELETE' });
+  const json = await res.json();
+  if (json.success) location.reload();
+}
+</script>
+{% endblock %}

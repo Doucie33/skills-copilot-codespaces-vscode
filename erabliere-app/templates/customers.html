@@ -1,0 +1,237 @@
+{% extends "base.html" %}
+{% block title %}Clients{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1 class="page-title"><i class="bi bi-people"></i> Clients</h1>
+  <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#customerModal" onclick="openNew()">
+    <i class="bi bi-person-plus me-1"></i>Nouveau client
+  </button>
+</div>
+
+<div class="card">
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-hover mb-0" id="customersTable">
+        <thead>
+          <tr>
+            <th>ID Client</th><th>Nom</th><th>Téléphone</th>
+            <th>Ville</th><th>Abonnement</th><th class="text-center">Statut</th><th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for c in customers %}
+          <tr>
+            <td><code class="small text-success">{{ c.customer_id }}</code></td>
+            <td>
+              <div class="fw-semibold">{{ c.first_name }} {{ c.last_name }}</div>
+              {% if c.email %}<div class="text-muted small">{{ c.email }}</div>{% endif %}
+            </td>
+            <td>{{ c.phone or '—' }}</td>
+            <td>{{ c.city or '—' }}</td>
+            <td>
+              {% if c.subscription_name %}
+                <span class="badge bg-info text-dark">{{ c.subscription_name }}</span>
+              {% else %}—{% endif %}
+            </td>
+            <td class="text-center">
+              <span class="badge bg-{{ 'success' if c.active else 'secondary' }}">
+                {{ 'Actif' if c.active else 'Inactif' }}
+              </span>
+            </td>
+            <td>
+              <div class="d-flex gap-1 justify-content-end">
+                <a href="{{ url_for('customer_history', customer_id=c.customer_id) }}"
+                   class="btn btn-sm btn-outline-success" title="Historique">
+                  <i class="bi bi-clock-history"></i>
+                </a>
+                <button class="btn btn-sm btn-outline-primary" onclick="editCustomer({{ c|tojson }})">
+                  <i class="bi bi-pencil"></i>
+                </button>
+                <button class="btn btn-sm btn-outline-danger" onclick="deleteCustomer('{{ c.customer_id }}')">
+                  <i class="bi bi-trash"></i>
+                </button>
+              </div>
+            </td>
+          </tr>
+          {% else %}
+          <tr><td colspan="7" class="text-center text-muted py-5">
+            <i class="bi bi-people fs-2 d-block mb-2"></i>Aucun client enregistré.
+          </td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- Modal -->
+<div class="modal fade" id="customerModal" tabindex="-1">
+  <div class="modal-dialog modal-xl">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="modalTitle">Nouveau client</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="editCustomerId"/>
+        <div class="row g-3">
+          <div class="col-md-4">
+            <label class="form-label">Prénom *</label>
+            <input type="text" class="form-control" id="cFirstName"/>
+          </div>
+          <div class="col-md-4">
+            <label class="form-label">Nom *</label>
+            <input type="text" class="form-control" id="cLastName"/>
+          </div>
+          <div class="col-md-4">
+            <label class="form-label">Téléphone</label>
+            <input type="tel" class="form-control" id="cPhone" placeholder="418-000-0000"/>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Courriel</label>
+            <input type="email" class="form-control" id="cEmail"/>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Adresse</label>
+            <input type="text" class="form-control" id="cAddress" placeholder="123 Rue des Érables"/>
+          </div>
+          <div class="col-md-4">
+            <label class="form-label">Ville</label>
+            <input type="text" class="form-control" id="cCity"/>
+          </div>
+          <div class="col-md-4">
+            <label class="form-label">Province</label>
+            <select class="form-select" id="cProvince">
+              <option value="QC">Québec</option>
+              <option value="ON">Ontario</option>
+              <option value="NB">Nouveau-Brunswick</option>
+              <option value="NS">Nouvelle-Écosse</option>
+              <option value="PE">Île-du-Prince-Édouard</option>
+              <option value="NL">Terre-Neuve</option>
+              <option value="MB">Manitoba</option>
+              <option value="SK">Saskatchewan</option>
+              <option value="AB">Alberta</option>
+              <option value="BC">Colombie-Britannique</option>
+            </select>
+          </div>
+          <div class="col-md-4">
+            <label class="form-label">Code postal</label>
+            <input type="text" class="form-control" id="cPostal" placeholder="G1A 0A1"/>
+          </div>
+          <div class="col-md-4">
+            <label class="form-label">Abonnement</label>
+            <select class="form-select" id="cSubscription">
+              <option value="">— Aucun —</option>
+              {% for s in subscriptions %}
+              <option value="{{ s.subscription_id }}">{{ s.name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-md-4">
+            <label class="form-label">Début abonnement</label>
+            <input type="date" class="form-control" id="cSubStart"/>
+          </div>
+          <div class="col-md-4">
+            <label class="form-label">Fin abonnement</label>
+            <input type="date" class="form-control" id="cSubEnd"/>
+          </div>
+          <div class="col-12">
+            <label class="form-label">Notes</label>
+            <textarea class="form-control" id="cNotes" rows="2"></textarea>
+          </div>
+          <div class="col-12">
+            <div class="form-check form-switch">
+              <input class="form-check-input" type="checkbox" id="cActive" checked/>
+              <label class="form-check-label" for="cActive">Client actif</label>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+        <button type="button" class="btn btn-primary" onclick="saveCustomer()">
+          <i class="bi bi-check-lg me-1"></i>Enregistrer
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+$(function() {
+  $('#customersTable').DataTable({
+    language: { url: 'https://cdn.datatables.net/plug-ins/1.13.8/i18n/fr-FR.json' },
+    order: [[1, 'asc']]
+  });
+});
+
+function openNew() {
+  document.getElementById('modalTitle').textContent = 'Nouveau client';
+  document.getElementById('editCustomerId').value = '';
+  ['cFirstName','cLastName','cPhone','cEmail','cAddress','cCity','cPostal','cNotes'].forEach(id => {
+    document.getElementById(id).value = '';
+  });
+  document.getElementById('cProvince').value = 'QC';
+  document.getElementById('cSubscription').value = '';
+  document.getElementById('cSubStart').value = '';
+  document.getElementById('cSubEnd').value = '';
+  document.getElementById('cActive').checked = true;
+}
+
+function editCustomer(c) {
+  document.getElementById('modalTitle').textContent = 'Modifier le client';
+  document.getElementById('editCustomerId').value = c.customer_id;
+  document.getElementById('cFirstName').value = c.first_name || '';
+  document.getElementById('cLastName').value = c.last_name || '';
+  document.getElementById('cPhone').value = c.phone || '';
+  document.getElementById('cEmail').value = c.email || '';
+  document.getElementById('cAddress').value = c.address || '';
+  document.getElementById('cCity').value = c.city || '';
+  document.getElementById('cProvince').value = c.province || 'QC';
+  document.getElementById('cPostal').value = c.postal_code || '';
+  document.getElementById('cSubscription').value = c.subscription_id || '';
+  document.getElementById('cSubStart').value = c.subscription_start || '';
+  document.getElementById('cSubEnd').value = c.subscription_end || '';
+  document.getElementById('cNotes').value = c.notes || '';
+  document.getElementById('cActive').checked = c.active == 1;
+  new bootstrap.Modal(document.getElementById('customerModal')).show();
+}
+
+async function saveCustomer() {
+  const cid = document.getElementById('editCustomerId').value;
+  const data = {
+    first_name: document.getElementById('cFirstName').value.trim(),
+    last_name: document.getElementById('cLastName').value.trim(),
+    phone: document.getElementById('cPhone').value.trim(),
+    email: document.getElementById('cEmail').value.trim(),
+    address: document.getElementById('cAddress').value.trim(),
+    city: document.getElementById('cCity').value.trim(),
+    province: document.getElementById('cProvince').value,
+    postal_code: document.getElementById('cPostal').value.trim(),
+    subscription_id: document.getElementById('cSubscription').value,
+    subscription_start: document.getElementById('cSubStart').value,
+    subscription_end: document.getElementById('cSubEnd').value,
+    notes: document.getElementById('cNotes').value.trim(),
+    active: document.getElementById('cActive').checked ? 1 : 0,
+  };
+  if (!data.first_name || !data.last_name) { alert('Prénom et nom obligatoires.'); return; }
+
+  const url = cid ? `/api/customers/${cid}` : '/api/customers';
+  const method = cid ? 'PUT' : 'POST';
+  const res = await fetch(url, { method, headers: {'Content-Type':'application/json'}, body: JSON.stringify(data) });
+  const json = await res.json();
+  if (json.success) location.reload();
+  else alert('Erreur: ' + json.error);
+}
+
+async function deleteCustomer(cid) {
+  if (!confirm('Désactiver ce client?')) return;
+  const res = await fetch(`/api/customers/${cid}`, { method: 'DELETE' });
+  const json = await res.json();
+  if (json.success) location.reload();
+}
+</script>
+{% endblock %}

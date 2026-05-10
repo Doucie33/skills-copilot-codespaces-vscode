@@ -1,0 +1,154 @@
+{% extends "base.html" %}
+{% block title %}Abonnements{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1 class="page-title"><i class="bi bi-star"></i> Catégories d'abonnements</h1>
+  <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#subModal" onclick="openNew()">
+    <i class="bi bi-plus-lg me-1"></i>Nouvel abonnement
+  </button>
+</div>
+
+<div class="row g-3">
+  {% for s in subscriptions %}
+  <div class="col-md-6 col-lg-4">
+    <div class="card h-100">
+      <div class="card-body">
+        <div class="d-flex align-items-center justify-content-between mb-2">
+          <h6 class="mb-0 fw-bold">{{ s.name }}</h6>
+          <span class="badge bg-{{ 'success' if s.active else 'secondary' }}">
+            {{ 'Actif' if s.active else 'Inactif' }}
+          </span>
+        </div>
+        <p class="text-muted small mb-2">{{ s.description or 'Aucune description.' }}</p>
+        <div class="d-flex gap-3 text-sm">
+          <span><i class="bi bi-tag me-1 text-success"></i><strong>{{ "%.2f"|format(s.price) }} $</strong></span>
+          <span><i class="bi bi-calendar me-1 text-primary"></i>{{ s.duration_days }} jours</span>
+          <span><i class="bi bi-people me-1 text-info"></i>{{ s.customer_count }} client(s)</span>
+        </div>
+        <hr class="my-2"/>
+        <code class="small text-muted">{{ s.subscription_id }}</code>
+      </div>
+      <div class="card-footer bg-transparent d-flex gap-2">
+        <button class="btn btn-sm btn-outline-primary flex-grow-1" onclick="editSub({{ s|tojson }})">
+          <i class="bi bi-pencil me-1"></i>Modifier
+        </button>
+        <button class="btn btn-sm btn-outline-danger" onclick="deleteSub('{{ s.subscription_id }}')">
+          <i class="bi bi-trash"></i>
+        </button>
+      </div>
+    </div>
+  </div>
+  {% else %}
+  <div class="col-12">
+    <div class="card">
+      <div class="card-body text-center py-5 text-muted">
+        <i class="bi bi-star fs-2 d-block mb-2"></i>
+        Aucun abonnement. Créez votre premier type d'abonnement.
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+<!-- Modal -->
+<div class="modal fade" id="subModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="modalTitle">Nouvel abonnement</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="editSubId"/>
+        <div class="row g-3">
+          <div class="col-12">
+            <label class="form-label">Nom de l'abonnement *</label>
+            <input type="text" class="form-control" id="subName" placeholder="Ex: Abonné Famille, Épicerie locale..."/>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Prix ($)</label>
+            <input type="number" class="form-control" id="subPrice" step="0.01" min="0" value="0"/>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Durée (jours)</label>
+            <select class="form-select" id="subDuration">
+              <option value="30">30 jours (mensuel)</option>
+              <option value="90">90 jours (trimestriel)</option>
+              <option value="180">180 jours (semi-annuel)</option>
+              <option value="365" selected>365 jours (annuel)</option>
+            </select>
+          </div>
+          <div class="col-12">
+            <label class="form-label">Description</label>
+            <textarea class="form-control" id="subDesc" rows="3" placeholder="Avantages, conditions..."></textarea>
+          </div>
+          <div class="col-12">
+            <div class="form-check form-switch">
+              <input class="form-check-input" type="checkbox" id="subActive" checked/>
+              <label class="form-check-label" for="subActive">Abonnement actif</label>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+        <button type="button" class="btn btn-primary" onclick="saveSub()">
+          <i class="bi bi-check-lg me-1"></i>Enregistrer
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function openNew() {
+  document.getElementById('modalTitle').textContent = 'Nouvel abonnement';
+  document.getElementById('editSubId').value = '';
+  document.getElementById('subName').value = '';
+  document.getElementById('subPrice').value = '0';
+  document.getElementById('subDuration').value = '365';
+  document.getElementById('subDesc').value = '';
+  document.getElementById('subActive').checked = true;
+}
+
+function editSub(s) {
+  document.getElementById('modalTitle').textContent = 'Modifier l\'abonnement';
+  document.getElementById('editSubId').value = s.subscription_id;
+  document.getElementById('subName').value = s.name;
+  document.getElementById('subPrice').value = s.price;
+  document.getElementById('subDuration').value = s.duration_days;
+  document.getElementById('subDesc').value = s.description || '';
+  document.getElementById('subActive').checked = s.active == 1;
+  new bootstrap.Modal(document.getElementById('subModal')).show();
+}
+
+async function saveSub() {
+  const sid = document.getElementById('editSubId').value;
+  const data = {
+    name: document.getElementById('subName').value.trim(),
+    price: document.getElementById('subPrice').value,
+    duration_days: document.getElementById('subDuration').value,
+    description: document.getElementById('subDesc').value.trim(),
+    active: document.getElementById('subActive').checked ? 1 : 0,
+  };
+  if (!data.name) { alert('Nom obligatoire.'); return; }
+
+  const url = sid ? `/api/subscriptions/${sid}` : '/api/subscriptions';
+  const method = sid ? 'PUT' : 'POST';
+  const res = await fetch(url, { method, headers: {'Content-Type':'application/json'}, body: JSON.stringify(data) });
+  const json = await res.json();
+  if (json.success) location.reload();
+  else alert('Erreur: ' + json.error);
+}
+
+async function deleteSub(sid) {
+  if (!confirm('Désactiver cet abonnement?')) return;
+  const res = await fetch(`/api/subscriptions/${sid}`, { method: 'DELETE' });
+  const json = await res.json();
+  if (json.success) location.reload();
+}
+</script>
+{% endblock %}

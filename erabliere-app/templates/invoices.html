@@ -1,0 +1,153 @@
+{% extends "base.html" %}
+{% block title %}Factures{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1 class="page-title"><i class="bi bi-receipt"></i> Factures</h1>
+  <div class="d-flex gap-2">
+    <a href="{{ url_for('export_invoices_csv') }}" class="btn btn-outline-success">
+      <i class="bi bi-filetype-csv me-1"></i>Export CSV
+    </a>
+    <a href="{{ url_for('create_invoice') }}" class="btn btn-primary">
+      <i class="bi bi-plus-lg me-1"></i>Nouvelle facture
+    </a>
+  </div>
+</div>
+
+<!-- Filter bar -->
+<div class="card mb-3">
+  <div class="card-body py-2">
+    <div class="row g-2 align-items-end">
+      <div class="col-auto">
+        <label class="form-label mb-1 small">Période</label>
+        <select class="form-select form-select-sm" id="filterPeriod" onchange="updateExportUrl()">
+          <option value="all">Toutes</option>
+          <option value="day">Journalier</option>
+          <option value="month">Mensuel</option>
+          <option value="year">Annuel</option>
+        </select>
+      </div>
+      <div class="col-auto" id="dayFilter" style="display:none">
+        <label class="form-label mb-1 small">Jour</label>
+        <input type="date" class="form-control form-control-sm" id="filterDay" onchange="updateExportUrl()"/>
+      </div>
+      <div class="col-auto" id="monthFilter" style="display:none">
+        <label class="form-label mb-1 small">Mois</label>
+        <select class="form-select form-select-sm" id="filterMonth" onchange="updateExportUrl()">
+          {% for m in range(1,13) %}
+          <option value="{{ '%02d'|format(m) }}">{{ ['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'][m-1] }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-auto" id="yearFilter" style="display:none">
+        <label class="form-label mb-1 small">Année</label>
+        <input type="number" class="form-control form-control-sm" id="filterYear"
+               value="{{ now().year if now is defined else '2025' }}" min="2020" max="2099" style="width:90px" onchange="updateExportUrl()"/>
+      </div>
+      <div class="col-auto" id="exportBtn" style="display:none">
+        <a href="#" class="btn btn-sm btn-outline-success" id="exportLink">
+          <i class="bi bi-download me-1"></i>Exporter cette période
+        </a>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-hover mb-0" id="invoicesTable">
+        <thead>
+          <tr>
+            <th>N° Facture</th><th>Client</th><th>Date</th>
+            <th class="text-end">Sous-total</th>
+            <th class="text-end">TPS</th>
+            <th class="text-end">TVQ</th>
+            <th class="text-end">Total</th>
+            <th class="text-center">Statut</th><th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for inv in invoices %}
+          <tr>
+            <td><code class="small text-success">{{ inv.invoice_number }}</code></td>
+            <td>{{ inv.customer_name }}</td>
+            <td>{{ inv.date }}</td>
+            <td class="text-end">{{ "%.2f"|format(inv.subtotal) }} $</td>
+            <td class="text-end text-muted">{{ "%.2f"|format(inv.tps_amount) }} $</td>
+            <td class="text-end text-muted">{{ "%.2f"|format(inv.tvq_amount) }} $</td>
+            <td class="text-end fw-bold">{{ "%.2f"|format(inv.total) }} $</td>
+            <td class="text-center">
+              <span class="badge bg-{{ 'success' if inv.status == 'payée' else ('warning' if inv.status == 'en attente' else 'secondary') }}">
+                {{ inv.status }}
+              </span>
+            </td>
+            <td>
+              <div class="d-flex gap-1 justify-content-end">
+                <a href="{{ url_for('view_invoice', invoice_number=inv.invoice_number) }}"
+                   class="btn btn-sm btn-outline-primary" title="Voir">
+                  <i class="bi bi-eye"></i>
+                </a>
+                <a href="{{ url_for('invoice_pdf', invoice_number=inv.invoice_number) }}"
+                   class="btn btn-sm btn-outline-danger" title="PDF">
+                  <i class="bi bi-file-earmark-pdf"></i>
+                </a>
+                <button class="btn btn-sm btn-outline-danger"
+                        onclick="deleteInvoice('{{ inv.invoice_number }}')" title="Supprimer">
+                  <i class="bi bi-trash"></i>
+                </button>
+              </div>
+            </td>
+          </tr>
+          {% else %}
+          <tr><td colspan="9" class="text-center text-muted py-5">
+            <i class="bi bi-receipt fs-2 d-block mb-2"></i>Aucune facture enregistrée.
+          </td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+$(function() {
+  $('#invoicesTable').DataTable({
+    language: { url: 'https://cdn.datatables.net/plug-ins/1.13.8/i18n/fr-FR.json' },
+    order: [[2, 'desc']]
+  });
+  document.getElementById('filterMonth').value = String(new Date().getMonth() + 1).padStart(2, '0');
+  document.getElementById('filterDay').value = new Date().toISOString().split('T')[0];
+});
+
+document.getElementById('filterPeriod').addEventListener('change', function() {
+  const v = this.value;
+  document.getElementById('dayFilter').style.display = v === 'day' ? '' : 'none';
+  document.getElementById('monthFilter').style.display = v === 'month' ? '' : 'none';
+  document.getElementById('yearFilter').style.display = v !== 'all' ? '' : 'none';
+  document.getElementById('exportBtn').style.display = v !== 'all' ? '' : 'none';
+  updateExportUrl();
+});
+
+function updateExportUrl() {
+  const period = document.getElementById('filterPeriod').value;
+  const year = document.getElementById('filterYear').value;
+  const month = document.getElementById('filterMonth').value;
+  const day = document.getElementById('filterDay').value;
+  let url = `/invoices/export/csv?period=${period}`;
+  if (period === 'day') url += `&day=${day}`;
+  else if (period === 'month') url += `&year=${year}&month=${month}`;
+  else if (period === 'year') url += `&year=${year}`;
+  document.getElementById('exportLink').href = url;
+}
+
+async function deleteInvoice(invNum) {
+  if (!confirm(`Supprimer la facture ${invNum}?`)) return;
+  const res = await fetch(`/api/invoices/${invNum}`, { method: 'DELETE' });
+  const json = await res.json();
+  if (json.success) location.reload();
+}
+</script>
+{% endblock %}

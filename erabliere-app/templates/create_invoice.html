@@ -1,0 +1,459 @@
+{% extends "base.html" %}
+{% block title %}Nouvelle facture{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1 class="page-title"><i class="bi bi-file-earmark-plus"></i> Nouvelle facture</h1>
+  <div class="d-flex gap-2">
+    <button class="btn btn-outline-secondary no-print" onclick="previewInvoice()">
+      <i class="bi bi-eye me-1"></i>Aperçu
+    </button>
+    <button class="btn btn-primary no-print" onclick="saveInvoice()">
+      <i class="bi bi-save me-1"></i>Enregistrer
+    </button>
+  </div>
+</div>
+
+<div class="row g-3">
+  <!-- Left: Invoice builder -->
+  <div class="col-lg-8">
+    <div class="card mb-3">
+      <div class="card-header">Informations de la facture</div>
+      <div class="card-body">
+        <div class="row g-3">
+          <div class="col-md-4">
+            <label class="form-label">N° Facture</label>
+            <input type="text" class="form-control" id="invNum" value="{{ inv_num }}" readonly/>
+          </div>
+          <div class="col-md-4">
+            <label class="form-label">Date *</label>
+            <input type="date" class="form-control" id="invDate" value="{{ today }}"/>
+          </div>
+          <div class="col-md-4">
+            <label class="form-label">Statut</label>
+            <select class="form-select" id="invStatus">
+              <option value="payée">Payée</option>
+              <option value="en attente">En attente</option>
+              <option value="annulée">Annulée</option>
+            </select>
+          </div>
+          <div class="col-12">
+            <label class="form-label">Client *</label>
+            <select class="form-select" id="invCustomer" onchange="updateCustomerInfo()">
+              <option value="">— Sélectionner un client —</option>
+              {% for c in customers %}
+              <option value="{{ c.customer_id }}"
+                data-name="{{ c.first_name }} {{ c.last_name }}"
+                data-address="{{ c.address }}"
+                data-city="{{ c.city }}"
+                data-phone="{{ c.phone }}">
+                {{ c.first_name }} {{ c.last_name }}{% if c.city %} — {{ c.city }}{% endif %}
+              </option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-12" id="customerInfoBox" style="display:none">
+            <div class="alert alert-light border py-2 px-3 small">
+              <i class="bi bi-person-fill me-1 text-success"></i>
+              <span id="customerInfoText"></span>
+            </div>
+          </div>
+          <div class="col-12">
+            <label class="form-label">Notes</label>
+            <textarea class="form-control" id="invNotes" rows="1" placeholder="Notes optionnelles"></textarea>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header d-flex align-items-center justify-content-between">
+        <span><i class="bi bi-list-ul me-2 text-success"></i>Produits</span>
+        <button class="btn btn-sm btn-success" onclick="addLine()">
+          <i class="bi bi-plus-lg me-1"></i>Ajouter un produit
+        </button>
+      </div>
+      <div class="card-body">
+        <div id="invoiceLines">
+          <!-- Lines injected by JS -->
+        </div>
+        <div class="text-muted small text-center mt-2" id="emptyLines">
+          Cliquez sur « Ajouter un produit » pour commencer.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Right: Totals -->
+  <div class="col-lg-4">
+    <div class="card sticky-top" style="top:20px">
+      <div class="card-header">Résumé</div>
+      <div class="card-body">
+        <div class="invoice-total-box">
+          <div class="d-flex justify-content-between mb-2">
+            <span class="text-muted">Sous-total</span>
+            <span id="sumSubtotal">0,00 $</span>
+          </div>
+          <div class="d-flex justify-content-between mb-2">
+            <span class="text-muted">TPS (5%)</span>
+            <span id="sumTPS">0,00 $</span>
+          </div>
+          <div class="d-flex justify-content-between mb-2">
+            <span class="text-muted">TVQ (9,975%)</span>
+            <span id="sumTVQ">0,00 $</span>
+          </div>
+          <hr/>
+          <div class="d-flex justify-content-between align-items-center">
+            <span class="fw-bold">TOTAL</span>
+            <span class="grand-total" id="sumTotal">0,00 $</span>
+          </div>
+        </div>
+
+        <div class="mt-3 d-grid gap-2">
+          <button class="btn btn-outline-primary" onclick="previewInvoice()">
+            <i class="bi bi-eye me-1"></i>Aperçu avant impression
+          </button>
+          <button class="btn btn-primary" onclick="saveInvoice()">
+            <i class="bi bi-save me-1"></i>Enregistrer la facture
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Preview Modal -->
+<div class="modal fade" id="previewModal" tabindex="-1" style="z-index:2000">
+  <div class="modal-dialog modal-xl modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-printer me-2"></i>Aperçu de la facture</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body p-0 bg-light">
+        <div id="invoicePreviewContent" class="p-4"></div>
+      </div>
+      <div class="modal-footer no-print">
+        <button class="btn btn-outline-secondary" data-bs-dismiss="modal">Fermer</button>
+        <button class="btn btn-outline-primary" onclick="printInvoice()">
+          <i class="bi bi-printer me-1"></i>Imprimer
+        </button>
+        <button class="btn btn-primary" onclick="saveInvoice()">
+          <i class="bi bi-save me-1"></i>Enregistrer
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const PRODUCTS = {{ products|tojson }};
+const TPS = {{ tps_rate }};
+const TVQ = {{ tvq_rate }};
+const COMPANY = {{ company|tojson }};
+const CUSTOMERS = {{ customers|tojson }};
+
+let lineCount = 0;
+
+function fmt(n) { return n.toFixed(2).replace('.', ',') + ' $'; }
+
+function updateCustomerInfo() {
+  const sel = document.getElementById('invCustomer');
+  const opt = sel.options[sel.selectedIndex];
+  const box = document.getElementById('customerInfoBox');
+  if (sel.value) {
+    box.style.display = '';
+    document.getElementById('customerInfoText').textContent =
+      `${opt.dataset.name} — ${opt.dataset.address || ''} ${opt.dataset.city || ''} — Tél: ${opt.dataset.phone || '—'}`;
+  } else {
+    box.style.display = 'none';
+  }
+}
+
+function addLine() {
+  document.getElementById('emptyLines').style.display = 'none';
+  lineCount++;
+  const id = lineCount;
+
+  const productOptions = PRODUCTS.map(p =>
+    `<option value="${p.product_id}" data-price="${p.price}" data-tax="${p.tax_type}" data-name="${p.name}">
+      [${p.product_id}] ${p.name} — ${p.price.toFixed(2)} $
+    </option>`
+  ).join('');
+
+  const html = `
+  <div class="invoice-line" id="line-${id}">
+    <div class="row g-2 align-items-end">
+      <div class="col-12 col-md-4">
+        <label class="form-label small mb-1">Produit</label>
+        <select class="form-select form-select-sm" id="lProd-${id}" onchange="onProductChange(${id})">
+          <option value="">— Sélectionner —</option>
+          ${productOptions}
+        </select>
+      </div>
+      <div class="col-6 col-md-2">
+        <label class="form-label small mb-1">P.U. ($)</label>
+        <input type="number" class="form-control form-control-sm" id="lPU-${id}"
+          step="0.01" min="0" value="0" oninput="calcLine(${id})"/>
+      </div>
+      <div class="col-6 col-md-1">
+        <label class="form-label small mb-1">Qté</label>
+        <input type="number" class="form-control form-control-sm" id="lQty-${id}"
+          step="0.01" min="0.01" value="1" oninput="calcLine(${id})"/>
+      </div>
+      <div class="col-6 col-md-2">
+        <label class="form-label small mb-1">Prix</label>
+        <input type="text" class="form-control form-control-sm" id="lPrix-${id}" readonly value="0,00 $"/>
+      </div>
+      <div class="col-6 col-md-2">
+        <label class="form-label small mb-1">Taxe</label>
+        <input type="text" class="form-control form-control-sm" id="lTax-${id}" readonly value="0,00 $"/>
+      </div>
+      <div class="col-6 col-md-1">
+        <label class="form-label small mb-1">Total</label>
+        <input type="text" class="form-control form-control-sm fw-bold" id="lTotal-${id}" readonly value="0,00 $"/>
+      </div>
+      <div class="col-auto">
+        <button class="btn btn-sm btn-outline-danger" onclick="removeLine(${id})">
+          <i class="bi bi-x-lg"></i>
+        </button>
+      </div>
+      <div class="col-12">
+        <div class="d-flex gap-2 align-items-center">
+          <span class="text-muted small">Taxe:</span>
+          <select class="form-select form-select-sm" style="width:auto" id="lTaxType-${id}" onchange="calcLine(${id})">
+            <option value="tps_tvq">TPS + TVQ</option>
+            <option value="tps_only">TPS seul.</option>
+            <option value="tvq_only">TVQ seul.</option>
+            <option value="none">Aucune</option>
+          </select>
+          <span class="badge badge-tax" id="lTaxBadge-${id}">TPS+TVQ</span>
+        </div>
+      </div>
+    </div>
+  </div>`;
+
+  document.getElementById('invoiceLines').insertAdjacentHTML('beforeend', html);
+  calcLine(id);
+}
+
+function onProductChange(id) {
+  const sel = document.getElementById(`lProd-${id}`);
+  const opt = sel.options[sel.selectedIndex];
+  if (opt.dataset.price) {
+    document.getElementById(`lPU-${id}`).value = opt.dataset.price;
+    document.getElementById(`lTaxType-${id}`).value = opt.dataset.tax || 'tps_tvq';
+  }
+  calcLine(id);
+}
+
+function calcLine(id) {
+  const pu = parseFloat(document.getElementById(`lPU-${id}`).value) || 0;
+  const qty = parseFloat(document.getElementById(`lQty-${id}`).value) || 0;
+  const taxType = document.getElementById(`lTaxType-${id}`).value;
+  const subtotal = pu * qty;
+  let tps = 0, tvq = 0;
+  if (taxType === 'tps_tvq') { tps = subtotal * TPS; tvq = subtotal * TVQ; }
+  else if (taxType === 'tps_only') { tps = subtotal * TPS; }
+  else if (taxType === 'tvq_only') { tvq = subtotal * TVQ; }
+  const taxAmt = tps + tvq;
+  const total = subtotal + taxAmt;
+
+  document.getElementById(`lPrix-${id}`).value = fmt(subtotal);
+  document.getElementById(`lTax-${id}`).value = fmt(taxAmt);
+  document.getElementById(`lTotal-${id}`).value = fmt(total);
+
+  const badge = document.getElementById(`lTaxBadge-${id}`);
+  const labels = {tps_tvq:'TPS+TVQ',tps_only:'TPS seul.',tvq_only:'TVQ seul.',none:'Aucune'};
+  badge.textContent = labels[taxType];
+  badge.className = `badge badge-tax tax-${taxType}`;
+
+  updateTotals();
+}
+
+function removeLine(id) {
+  document.getElementById(`line-${id}`).remove();
+  if (!document.getElementById('invoiceLines').children.length) {
+    document.getElementById('emptyLines').style.display = '';
+  }
+  updateTotals();
+}
+
+function updateTotals() {
+  let subtotal = 0, tpsTotal = 0, tvqTotal = 0;
+  document.querySelectorAll('[id^="line-"]').forEach(line => {
+    const id = line.id.replace('line-', '');
+    const pu = parseFloat(document.getElementById(`lPU-${id}`).value) || 0;
+    const qty = parseFloat(document.getElementById(`lQty-${id}`).value) || 0;
+    const taxType = document.getElementById(`lTaxType-${id}`).value;
+    const sub = pu * qty;
+    subtotal += sub;
+    if (taxType === 'tps_tvq') { tpsTotal += sub * TPS; tvqTotal += sub * TVQ; }
+    else if (taxType === 'tps_only') { tpsTotal += sub * TPS; }
+    else if (taxType === 'tvq_only') { tvqTotal += sub * TVQ; }
+  });
+  document.getElementById('sumSubtotal').textContent = fmt(subtotal);
+  document.getElementById('sumTPS').textContent = fmt(tpsTotal);
+  document.getElementById('sumTVQ').textContent = fmt(tvqTotal);
+  document.getElementById('sumTotal').textContent = fmt(subtotal + tpsTotal + tvqTotal);
+}
+
+function getInvoiceData() {
+  const items = [];
+  document.querySelectorAll('[id^="line-"]').forEach(line => {
+    const id = line.id.replace('line-', '');
+    const sel = document.getElementById(`lProd-${id}`);
+    const opt = sel.options[sel.selectedIndex];
+    if (!sel.value) return;
+    items.push({
+      product_id: sel.value,
+      product_name: opt.dataset.name,
+      unit_price: parseFloat(document.getElementById(`lPU-${id}`).value) || 0,
+      quantity: parseFloat(document.getElementById(`lQty-${id}`).value) || 1,
+      tax_type: document.getElementById(`lTaxType-${id}`).value,
+    });
+  });
+  return {
+    invoice_number: document.getElementById('invNum').value,
+    customer_id: document.getElementById('invCustomer').value,
+    date: document.getElementById('invDate').value,
+    status: document.getElementById('invStatus').value,
+    notes: document.getElementById('invNotes').value,
+    items,
+  };
+}
+
+function previewInvoice() {
+  const data = getInvoiceData();
+  if (!data.customer_id) { alert('Veuillez sélectionner un client.'); return; }
+
+  const custSel = document.getElementById('invCustomer');
+  const custOpt = custSel.options[custSel.selectedIndex];
+
+  let itemsRows = '';
+  let subtotal = 0, tpsT = 0, tvqT = 0;
+  data.items.forEach((item, i) => {
+    const sub = item.unit_price * item.quantity;
+    let tps = 0, tvq = 0;
+    if (item.tax_type === 'tps_tvq') { tps = sub * TPS; tvq = sub * TVQ; }
+    else if (item.tax_type === 'tps_only') tps = sub * TPS;
+    else if (item.tax_type === 'tvq_only') tvq = sub * TVQ;
+    const taxAmt = tps + tvq;
+    const total = sub + taxAmt;
+    subtotal += sub; tpsT += tps; tvqT += tvq;
+    const taxLabels = {tps_tvq:'TPS+TVQ',tps_only:'TPS',tvq_only:'TVQ',none:'—'};
+    itemsRows += `<tr>
+      <td class="text-center">${item.product_id}</td>
+      <td>${item.product_name}</td>
+      <td class="text-end">${item.unit_price.toFixed(2)} $</td>
+      <td class="text-center">${item.quantity}</td>
+      <td class="text-end">${sub.toFixed(2)} $</td>
+      <td class="text-end">${taxAmt.toFixed(2)} $<br><small class="text-muted">${taxLabels[item.tax_type]}</small></td>
+      <td class="text-end fw-bold">${total.toFixed(2)} $</td>
+    </tr>`;
+  });
+
+  const grandTotal = subtotal + tpsT + tvqT;
+  const logoHtml = COMPANY.logo_path
+    ? `<img src="/static/${COMPANY.logo_path}" style="max-height:60px;max-width:150px;object-fit:contain"/>`
+    : `<div style="font-size:2rem">🍁</div>`;
+
+  const html = `
+  <div class="invoice-preview">
+    <table style="width:100%;margin-bottom:20px">
+      <tr>
+        <td style="width:50%">
+          ${logoHtml}
+          <h5 class="mt-2 mb-1" style="color:#1b4332">${COMPANY.name}</h5>
+          <small class="text-muted">${COMPANY.address || ''} ${COMPANY.city || ''}<br>
+          Tél: ${COMPANY.phone || '—'} | ${COMPANY.email || ''}<br>
+          TPS: ${COMPANY.tps_number || '—'} | TVQ: ${COMPANY.tvq_number || '—'}</small>
+        </td>
+        <td style="text-align:right">
+          <div style="background:#2d6a4f;color:#fff;padding:16px 20px;border-radius:8px;display:inline-block">
+            <div style="font-size:1.5rem;font-weight:700">FACTURE</div>
+            <div>N°: <strong>${data.invoice_number}</strong></div>
+            <div>Date: ${data.date}</div>
+            <div>Statut: ${data.status}</div>
+          </div>
+        </td>
+      </tr>
+    </table>
+
+    <div style="background:#f8f9fa;border-radius:8px;padding:12px 16px;margin-bottom:20px">
+      <strong>Facturer à:</strong><br>
+      ${custOpt.dataset.name}<br>
+      ${custOpt.dataset.address || ''} ${custOpt.dataset.city || ''}<br>
+      Tél: ${custOpt.dataset.phone || '—'}
+    </div>
+
+    <table class="table invoice-items-table" style="width:100%">
+      <thead>
+        <tr>
+          <th class="text-center" style="width:12%">ID</th>
+          <th>Désignation</th>
+          <th class="text-end">P.U.</th>
+          <th class="text-center">Qté</th>
+          <th class="text-end">Prix</th>
+          <th class="text-end">Taxe</th>
+          <th class="text-end">Total</th>
+        </tr>
+      </thead>
+      <tbody>${itemsRows || '<tr><td colspan="7" class="text-center text-muted">Aucun produit</td></tr>'}</tbody>
+    </table>
+
+    <table class="invoice-totals ms-auto" style="min-width:280px">
+      <tr><td>Sous-total:</td><td class="text-end">${subtotal.toFixed(2)} $</td></tr>
+      <tr><td>TPS (5%):</td><td class="text-end">${tpsT.toFixed(2)} $</td></tr>
+      <tr><td>TVQ (9,975%):</td><td class="text-end">${tvqT.toFixed(2)} $</td></tr>
+      <tr class="grand-total-row">
+        <td style="padding:8px 12px"><strong>TOTAL</strong></td>
+        <td class="text-end" style="padding:8px 12px"><strong>${grandTotal.toFixed(2)} $</strong></td>
+      </tr>
+    </table>
+    ${data.notes ? `<div class="mt-3 text-muted small"><strong>Notes:</strong> ${data.notes}</div>` : ''}
+    <div class="text-center text-muted mt-4 small">Merci pour votre confiance!</div>
+  </div>`;
+
+  document.getElementById('invoicePreviewContent').innerHTML = html;
+  new bootstrap.Modal(document.getElementById('previewModal')).show();
+}
+
+function printInvoice() {
+  const content = document.getElementById('invoicePreviewContent').innerHTML;
+  const w = window.open('', '_blank', 'width=900,height=700');
+  w.document.write(`<!DOCTYPE html><html><head>
+    <meta charset="UTF-8"/>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css"/>
+    <style>
+      body{font-family:'Segoe UI',sans-serif;padding:20px}
+      .invoice-items-table th{background:#2d6a4f;color:#fff;padding:8px 12px}
+      .invoice-items-table td{padding:8px 12px;border-bottom:1px solid #eee}
+      .invoice-totals td{padding:4px 12px}
+      .grand-total-row{background:#1b4332;color:#fff;font-size:1.1rem}
+    </style>
+  </head><body>${content}<script>window.onload=()=>window.print()<\/script></body></html>`);
+  w.document.close();
+}
+
+async function saveInvoice() {
+  const data = getInvoiceData();
+  if (!data.customer_id) { alert('Veuillez sélectionner un client.'); return; }
+  if (!data.items.length) { alert('Ajoutez au moins un produit.'); return; }
+
+  const res = await fetch('/api/invoices', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify(data)
+  });
+  const json = await res.json();
+  if (json.success) {
+    window.location.href = `/invoices/${json.invoice_number}/view`;
+  } else {
+    alert('Erreur: ' + json.error);
+  }
+}
+</script>
+{% endblock %}

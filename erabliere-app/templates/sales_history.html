@@ -1,0 +1,232 @@
+{% extends "base.html" %}
+{% block title %}Historique des ventes{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1 class="page-title"><i class="bi bi-graph-up"></i> Historique des ventes</h1>
+</div>
+
+<!-- Period selector -->
+<div class="card mb-4">
+  <div class="card-body py-3">
+    <div class="row g-3 align-items-end">
+      <div class="col-auto">
+        <label class="form-label mb-1 small fw-semibold">Période</label>
+        <div class="btn-group" role="group">
+          <input type="radio" class="btn-check" name="period" id="pDay" value="day"/>
+          <label class="btn btn-outline-primary btn-sm" for="pDay">Journalier</label>
+          <input type="radio" class="btn-check" name="period" id="pMonth" value="month" checked/>
+          <label class="btn btn-outline-primary btn-sm" for="pMonth">Mensuel</label>
+          <input type="radio" class="btn-check" name="period" id="pYear" value="year"/>
+          <label class="btn btn-outline-primary btn-sm" for="pYear">Annuel</label>
+        </div>
+      </div>
+      <div class="col-auto" id="dayPicker">
+        <label class="form-label mb-1 small fw-semibold">Jour</label>
+        <input type="date" class="form-control form-control-sm" id="selDay" value="{{ current_day }}"/>
+      </div>
+      <div class="col-auto" id="monthPicker">
+        <label class="form-label mb-1 small fw-semibold">Mois</label>
+        <select class="form-select form-select-sm" id="selMonth">
+          {% for m in ['01','02','03','04','05','06','07','08','09','10','11','12'] %}
+          <option value="{{ m }}" {% if m == current_month %}selected{% endif %}>
+            {{ ['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'][loop.index0] }}
+          </option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-auto" id="yearPicker">
+        <label class="form-label mb-1 small fw-semibold">Année</label>
+        <select class="form-select form-select-sm" id="selYear">
+          {% for y in years %}
+          <option value="{{ y.year }}" {% if y.year|int == current_year %}selected{% endif %}>{{ y.year }}</option>
+          {% else %}
+          <option value="{{ current_year }}">{{ current_year }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-auto">
+        <button class="btn btn-primary btn-sm" onclick="loadReport()">
+          <i class="bi bi-search me-1"></i>Afficher
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Summary cards -->
+<div class="row g-3 mb-4" id="summaryCards">
+  <div class="col-6 col-md-3">
+    <div class="stat-card bg-green">
+      <div class="stat-label">Total ventes</div>
+      <div class="stat-value" id="sTotal">—</div>
+      <i class="bi bi-cash-coin stat-icon"></i>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="stat-card bg-amber">
+      <div class="stat-label">Sous-total</div>
+      <div class="stat-value" id="sSubtotal">—</div>
+      <i class="bi bi-receipt stat-icon"></i>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="stat-card bg-blue">
+      <div class="stat-label">TPS collectée</div>
+      <div class="stat-value" id="sTPS">—</div>
+      <i class="bi bi-percent stat-icon"></i>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="stat-card bg-purple">
+      <div class="stat-label">TVQ collectée</div>
+      <div class="stat-value" id="sTVQ">—</div>
+      <i class="bi bi-percent stat-icon"></i>
+    </div>
+  </div>
+</div>
+
+<div class="row g-3">
+  <!-- Chart -->
+  <div class="col-lg-8">
+    <div class="card">
+      <div class="card-header"><i class="bi bi-bar-chart me-2 text-success"></i>Évolution des ventes</div>
+      <div class="card-body">
+        <div class="chart-container" style="height:250px">
+          <canvas id="salesChart"></canvas>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Top products -->
+  <div class="col-lg-4">
+    <div class="card">
+      <div class="card-header"><i class="bi bi-trophy me-2 text-warning"></i>Produits les plus vendus</div>
+      <div class="card-body p-0">
+        <div id="topProductsList">
+          <div class="text-center text-muted py-4 small">Sélectionnez une période</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Invoices list -->
+  <div class="col-12" id="invoicesSection" style="display:none">
+    <div class="card">
+      <div class="card-header"><i class="bi bi-list me-2"></i>Factures de la période</div>
+      <div class="card-body p-0">
+        <div class="table-responsive">
+          <table class="table table-sm table-hover mb-0" id="periodInvoicesTable">
+            <thead>
+              <tr><th>N°</th><th>Client</th><th>Date</th>
+                  <th class="text-end">Total</th><th>Statut</th><th></th></tr>
+            </thead>
+            <tbody id="invoicesBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let salesChart = null;
+
+document.querySelectorAll('[name="period"]').forEach(r => r.addEventListener('change', updatePickers));
+updatePickers();
+loadReport();
+
+function updatePickers() {
+  const p = document.querySelector('[name="period"]:checked').value;
+  document.getElementById('dayPicker').style.display = p === 'day' ? '' : 'none';
+  document.getElementById('monthPicker').style.display = p === 'month' ? '' : 'none';
+  document.getElementById('yearPicker').style.display = p !== 'day' ? '' : 'none';
+}
+
+async function loadReport() {
+  const period = document.querySelector('[name="period"]:checked').value;
+  const year = document.getElementById('selYear').value;
+  const month = document.getElementById('selMonth').value;
+  const day = document.getElementById('selDay').value;
+
+  const params = new URLSearchParams({ period, year, month, day });
+  const res = await fetch(`/api/sales/summary?${params}`);
+  const data = await res.json();
+
+  const s = data.summary || {};
+  document.getElementById('sTotal').textContent = `${(s.total || 0).toFixed(2)} $`;
+  document.getElementById('sSubtotal').textContent = `${(s.subtotal || 0).toFixed(2)} $`;
+  document.getElementById('sTPS').textContent = `${(s.tps || 0).toFixed(2)} $`;
+  document.getElementById('sTVQ').textContent = `${(s.tvq || 0).toFixed(2)} $`;
+
+  // Chart
+  let labels = [], values = [];
+  if (data.daily_breakdown) {
+    labels = data.daily_breakdown.map(d => d.date);
+    values = data.daily_breakdown.map(d => d.total || 0);
+  } else if (data.monthly_breakdown) {
+    const mNames = ['Jan','Fév','Mar','Avr','Mai','Jun','Jul','Aoû','Sep','Oct','Nov','Déc'];
+    labels = data.monthly_breakdown.map(d => mNames[parseInt(d.month) - 1]);
+    values = data.monthly_breakdown.map(d => d.total || 0);
+  } else {
+    labels = ['Période'];
+    values = [s.total || 0];
+  }
+
+  const ctx = document.getElementById('salesChart').getContext('2d');
+  if (salesChart) salesChart.destroy();
+  salesChart = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{
+        label: 'Ventes ($)',
+        data: values,
+        backgroundColor: 'rgba(45,106,79,0.75)',
+        borderColor: '#2d6a4f',
+        borderWidth: 1,
+        borderRadius: 5,
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: { y: { beginAtZero: true, ticks: { callback: v => v + ' $' } } }
+    }
+  });
+
+  // Top products
+  const prods = data.products || [];
+  const topHtml = prods.length ? prods.slice(0, 8).map((p, i) => `
+    <div class="d-flex align-items-center gap-3 px-3 py-2 border-bottom">
+      <span class="product-rank rank-${i+1}">${i+1}</span>
+      <div class="flex-grow-1">
+        <div class="small fw-semibold">${p.product_name}</div>
+        <div class="text-muted" style="font-size:0.72rem">${(p.total_qty||0).toFixed(1)} unité(s) — ${(p.total_revenue||0).toFixed(2)} $</div>
+      </div>
+    </div>`).join('')
+    : '<div class="text-center text-muted py-4 small">Aucun produit</div>';
+  document.getElementById('topProductsList').innerHTML = topHtml;
+
+  // Invoices list (daily or monthly detail)
+  if (data.invoices) {
+    document.getElementById('invoicesSection').style.display = '';
+    const rows = data.invoices.map(inv => `
+      <tr>
+        <td><code class="small">${inv.invoice_number}</code></td>
+        <td>${inv.customer_name}</td>
+        <td>${inv.date}</td>
+        <td class="text-end fw-semibold">${(inv.total||0).toFixed(2)} $</td>
+        <td><span class="badge bg-${inv.status==='payée'?'success':'warning'}">${inv.status}</span></td>
+        <td><a href="/invoices/${inv.invoice_number}/view" class="btn btn-sm btn-outline-primary"><i class="bi bi-eye"></i></a></td>
+      </tr>`).join('');
+    document.getElementById('invoicesBody').innerHTML = rows || '<tr><td colspan="6" class="text-center text-muted py-3">Aucune facture</td></tr>';
+  } else {
+    document.getElementById('invoicesSection').style.display = 'none';
+  }
+}
+</script>
+{% endblock %}

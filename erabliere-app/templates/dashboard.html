@@ -1,0 +1,160 @@
+{% extends "base.html" %}
+{% block title %}Tableau de bord{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1 class="page-title"><i class="bi bi-speedometer2"></i> Tableau de bord</h1>
+  <span class="text-muted small">{{ now().strftime('%A %d %B %Y') if now is defined else '' }}</span>
+</div>
+
+<!-- Stat cards -->
+<div class="row g-3 mb-4">
+  <div class="col-6 col-xl-3">
+    <div class="stat-card bg-green">
+      <div class="stat-label">Ventes aujourd'hui</div>
+      <div class="stat-value">{{ "%.2f"|format(stats.sales_today) }} $</div>
+      <div class="stat-label">{{ stats.invoices_today }} facture(s)</div>
+      <i class="bi bi-cash-coin stat-icon"></i>
+    </div>
+  </div>
+  <div class="col-6 col-xl-3">
+    <div class="stat-card bg-amber">
+      <div class="stat-label">Ventes ce mois</div>
+      <div class="stat-value">{{ "%.2f"|format(stats.sales_month) }} $</div>
+      <div class="stat-label">Revenus mensuels</div>
+      <i class="bi bi-calendar-month stat-icon"></i>
+    </div>
+  </div>
+  <div class="col-6 col-xl-3">
+    <div class="stat-card bg-blue">
+      <div class="stat-label">Ventes annuelles</div>
+      <div class="stat-value">{{ "%.2f"|format(stats.sales_year) }} $</div>
+      <div class="stat-label">Total cette année</div>
+      <i class="bi bi-bar-chart stat-icon"></i>
+    </div>
+  </div>
+  <div class="col-6 col-xl-3">
+    <div class="stat-card bg-purple">
+      <div class="stat-label">Clients actifs</div>
+      <div class="stat-value">{{ stats.total_customers }}</div>
+      <div class="stat-label">{{ stats.total_products }} produits</div>
+      <i class="bi bi-people stat-icon"></i>
+    </div>
+  </div>
+</div>
+
+<div class="row g-3 mb-4">
+  <!-- Sales chart -->
+  <div class="col-lg-8">
+    <div class="card h-100">
+      <div class="card-header d-flex align-items-center justify-content-between">
+        <span><i class="bi bi-graph-up-arrow text-success me-2"></i>Ventes — 30 derniers jours</span>
+      </div>
+      <div class="card-body">
+        <div class="chart-container">
+          <canvas id="salesChart"></canvas>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Top products -->
+  <div class="col-lg-4">
+    <div class="card h-100">
+      <div class="card-header">
+        <i class="bi bi-trophy text-warning me-2"></i>Top produits (mois)
+      </div>
+      <div class="card-body p-0">
+        <ul class="list-group list-group-flush">
+          {% for i, p in enumerate(stats.top_products) %}
+          <li class="list-group-item d-flex align-items-center gap-3 py-3">
+            <span class="product-rank rank-{{ i+1 }}">{{ i+1 }}</span>
+            <div class="flex-grow-1">
+              <div class="fw-semibold small">{{ p.product_name }}</div>
+              <div class="text-muted" style="font-size:0.75rem">{{ p.qty }} unité(s) vendues</div>
+            </div>
+          </li>
+          {% else %}
+          <li class="list-group-item text-muted small text-center py-4">Aucune vente ce mois</li>
+          {% endfor %}
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Recent invoices -->
+<div class="card">
+  <div class="card-header d-flex align-items-center justify-content-between">
+    <span><i class="bi bi-receipt text-success me-2"></i>Dernières factures</span>
+    <a href="{{ url_for('invoices') }}" class="btn btn-sm btn-outline-primary">Voir tout</a>
+  </div>
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-hover mb-0">
+        <thead>
+          <tr>
+            <th>N° Facture</th><th>Client</th><th>Date</th>
+            <th class="text-end">Total</th><th>Statut</th><th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for inv in recent_invoices %}
+          <tr>
+            <td><code class="small">{{ inv.invoice_number }}</code></td>
+            <td>{{ inv.customer_name }}</td>
+            <td>{{ inv.date }}</td>
+            <td class="text-end fw-semibold">{{ "%.2f"|format(inv.total) }} $</td>
+            <td>
+              <span class="badge bg-{{ 'success' if inv.status == 'payée' else 'warning' }}">
+                {{ inv.status }}
+              </span>
+            </td>
+            <td>
+              <a href="{{ url_for('view_invoice', invoice_number=inv.invoice_number) }}"
+                 class="btn btn-sm btn-outline-secondary">
+                <i class="bi bi-eye"></i>
+              </a>
+            </td>
+          </tr>
+          {% else %}
+          <tr><td colspan="6" class="text-center text-muted py-4">Aucune facture</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const chartData = {{ chart_data|safe }};
+const labels = chartData.map(d => d.date);
+const values = chartData.map(d => d.total || 0);
+
+const ctx = document.getElementById('salesChart').getContext('2d');
+new Chart(ctx, {
+  type: 'bar',
+  data: {
+    labels,
+    datasets: [{
+      label: 'Ventes ($)',
+      data: values,
+      backgroundColor: 'rgba(45,106,79,0.7)',
+      borderColor: 'rgba(45,106,79,1)',
+      borderWidth: 1,
+      borderRadius: 4,
+    }]
+  },
+  options: {
+    responsive: true, maintainAspectRatio: false,
+    plugins: { legend: { display: false } },
+    scales: {
+      y: { beginAtZero: true, ticks: { callback: v => v + ' $' } },
+      x: { ticks: { maxRotation: 45, font: { size: 10 } } }
+    }
+  }
+});
+</script>
+{% endblock %}

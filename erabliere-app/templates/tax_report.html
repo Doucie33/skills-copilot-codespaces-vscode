@@ -1,0 +1,205 @@
+{% extends "base.html" %}
+{% block title %}Rapport de taxes{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1 class="page-title"><i class="bi bi-percent"></i> Rapport de taxes TPS / TVQ</h1>
+</div>
+
+<!-- Period selector -->
+<div class="card mb-4">
+  <div class="card-body py-3">
+    <div class="row g-3 align-items-end">
+      <div class="col-auto">
+        <label class="form-label mb-1 small fw-semibold">Période</label>
+        <div class="btn-group" role="group">
+          <input type="radio" class="btn-check" name="period" id="pMonth" value="month"/>
+          <label class="btn btn-outline-primary btn-sm" for="pMonth">Mensuel</label>
+          <input type="radio" class="btn-check" name="period" id="pQuarter" value="quarter" checked/>
+          <label class="btn btn-outline-primary btn-sm" for="pQuarter">Trimestriel</label>
+          <input type="radio" class="btn-check" name="period" id="pYear" value="year"/>
+          <label class="btn btn-outline-primary btn-sm" for="pYear">Annuel</label>
+        </div>
+      </div>
+      <div class="col-auto">
+        <label class="form-label mb-1 small fw-semibold">Année</label>
+        <select class="form-select form-select-sm" id="selYear">
+          {% for y in years %}
+          <option value="{{ y.year }}" {% if y.year|int == current_year %}selected{% endif %}>{{ y.year }}</option>
+          {% else %}
+          <option value="{{ current_year }}" selected>{{ current_year }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-auto" id="monthSel">
+        <label class="form-label mb-1 small fw-semibold">Mois</label>
+        <select class="form-select form-select-sm" id="selMonth">
+          {% for m in ['01','02','03','04','05','06','07','08','09','10','11','12'] %}
+          <option value="{{ m }}" {% if m == current_month %}selected{% endif %}>
+            {{ ['Jan','Fév','Mar','Avr','Mai','Jun','Jul','Aoû','Sep','Oct','Nov','Déc'][loop.index0] }}
+          </option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-auto">
+        <button class="btn btn-primary btn-sm" onclick="loadTaxReport()">
+          <i class="bi bi-calculator me-1"></i>Calculer
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Results -->
+<div id="reportResults" style="display:none">
+  <div class="row g-3 mb-4">
+    <div class="col-md-6">
+      <div class="card border-success">
+        <div class="card-header bg-success text-white">
+          <i class="bi bi-arrow-up-circle me-2"></i>Taxes collectées (ventes clients)
+        </div>
+        <div class="card-body">
+          <div class="row g-2 text-center">
+            <div class="col-4">
+              <div class="text-muted small">Factures</div>
+              <div class="fs-5 fw-bold" id="rInvoiceCount">—</div>
+            </div>
+            <div class="col-4">
+              <div class="text-muted small">TPS collectée</div>
+              <div class="fs-5 fw-bold text-success" id="rTpsCollected">—</div>
+            </div>
+            <div class="col-4">
+              <div class="text-muted small">TVQ collectée</div>
+              <div class="fs-5 fw-bold text-success" id="rTvqCollected">—</div>
+            </div>
+          </div>
+          <hr class="my-2"/>
+          <div class="d-flex justify-content-between">
+            <span class="text-muted">Sous-total ventes:</span>
+            <span class="fw-semibold" id="rSalesSub">—</span>
+          </div>
+          <div class="d-flex justify-content-between">
+            <span class="text-muted">Total ventes (TTC):</span>
+            <span class="fw-bold" id="rSalesTotal">—</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-md-6">
+      <div class="card border-danger">
+        <div class="card-header bg-danger text-white">
+          <i class="bi bi-arrow-down-circle me-2"></i>Taxes payées (dépenses fournisseurs)
+        </div>
+        <div class="card-body">
+          <div class="row g-2 text-center">
+            <div class="col-4">
+              <div class="text-muted small">Entrées</div>
+              <div class="fs-5 fw-bold" id="rEntryCount">—</div>
+            </div>
+            <div class="col-4">
+              <div class="text-muted small">TPS payée</div>
+              <div class="fs-5 fw-bold text-danger" id="rTpsPaid">—</div>
+            </div>
+            <div class="col-4">
+              <div class="text-muted small">TVQ payée</div>
+              <div class="fs-5 fw-bold text-danger" id="rTvqPaid">—</div>
+            </div>
+          </div>
+          <hr class="my-2"/>
+          <div class="d-flex justify-content-between">
+            <span class="text-muted">Sous-total dépenses:</span>
+            <span class="fw-semibold" id="rExpSub">—</span>
+          </div>
+          <div class="d-flex justify-content-between">
+            <span class="text-muted">Total dépenses (TTC):</span>
+            <span class="fw-bold" id="rExpTotal">—</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Net taxes owed -->
+  <div class="card border-warning">
+    <div class="card-header bg-warning text-dark fw-bold">
+      <i class="bi bi-bank me-2"></i>Taxes nettes à remettre à l'État
+    </div>
+    <div class="card-body">
+      <div class="row g-3">
+        <div class="col-md-4 text-center">
+          <div class="text-muted small mb-1">TPS nette à remettre</div>
+          <div class="fs-3 fw-bold" id="rTpsNet">—</div>
+          <div class="text-muted small">(collectée − payée)</div>
+        </div>
+        <div class="col-md-4 text-center">
+          <div class="text-muted small mb-1">TVQ nette à remettre</div>
+          <div class="fs-3 fw-bold" id="rTvqNet">—</div>
+          <div class="text-muted small">(collectée − payée)</div>
+        </div>
+        <div class="col-md-4 text-center">
+          <div class="text-muted small mb-1">TOTAL TAXES DUES</div>
+          <div class="fs-2 fw-bold text-danger" id="rTotalNet">—</div>
+        </div>
+      </div>
+
+      <div class="alert alert-info mt-3 small mb-0">
+        <i class="bi bi-info-circle me-2"></i>
+        <strong>TPS:</strong> Taux 5% | Numéro: <strong>{{ company.tps_number or 'À configurer' }}</strong> &nbsp;&nbsp;
+        <strong>TVQ:</strong> Taux 9,975% | Numéro: <strong>{{ company.tvq_number or 'À configurer' }}</strong>
+        &nbsp;—&nbsp;
+        <a href="{{ url_for('settings') }}">Configurer les numéros de taxes</a>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="noReport" class="text-center text-muted py-5">
+  <i class="bi bi-calculator fs-2 d-block mb-2"></i>
+  Sélectionnez une période et cliquez sur « Calculer »
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.querySelectorAll('[name="period"]').forEach(r => r.addEventListener('change', function() {
+  document.getElementById('monthSel').style.display = this.value === 'month' ? '' : 'none';
+}));
+
+async function loadTaxReport() {
+  const period = document.querySelector('[name="period"]:checked').value;
+  const year = document.getElementById('selYear').value;
+  const month = document.getElementById('selMonth').value;
+
+  const params = new URLSearchParams({ period, year, month });
+  const res = await fetch(`/api/taxes/report?${params}`);
+  const data = await res.json();
+
+  const s = data.sales || {};
+  const e = data.expenses || {};
+
+  document.getElementById('rInvoiceCount').textContent = s.invoice_count || 0;
+  document.getElementById('rTpsCollected').textContent = `${(s.tps_collected||0).toFixed(2)} $`;
+  document.getElementById('rTvqCollected').textContent = `${(s.tvq_collected||0).toFixed(2)} $`;
+  document.getElementById('rSalesSub').textContent = `${(s.subtotal||0).toFixed(2)} $`;
+  document.getElementById('rSalesTotal').textContent = `${(s.total||0).toFixed(2)} $`;
+
+  document.getElementById('rEntryCount').textContent = e.entry_count || 0;
+  document.getElementById('rTpsPaid').textContent = `${(e.tps_paid||0).toFixed(2)} $`;
+  document.getElementById('rTvqPaid').textContent = `${(e.tvq_paid||0).toFixed(2)} $`;
+  document.getElementById('rExpSub').textContent = `${(e.subtotal||0).toFixed(2)} $`;
+  document.getElementById('rExpTotal').textContent = `${(e.total||0).toFixed(2)} $`;
+
+  const tpsColor = data.tps_net >= 0 ? 'text-danger' : 'text-success';
+  const tvqColor = data.tvq_net >= 0 ? 'text-danger' : 'text-success';
+  document.getElementById('rTpsNet').className = `fs-3 fw-bold ${tpsColor}`;
+  document.getElementById('rTpsNet').textContent = `${(data.tps_net||0).toFixed(2)} $`;
+  document.getElementById('rTvqNet').className = `fs-3 fw-bold ${tvqColor}`;
+  document.getElementById('rTvqNet').textContent = `${(data.tvq_net||0).toFixed(2)} $`;
+  document.getElementById('rTotalNet').textContent = `${(data.total_net||0).toFixed(2)} $`;
+
+  document.getElementById('reportResults').style.display = '';
+  document.getElementById('noReport').style.display = 'none';
+}
+</script>
+{% endblock %}

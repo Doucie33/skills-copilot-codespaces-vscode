@@ -1,0 +1,153 @@
+{% extends "base.html" %}
+{% block title %}Paramètres{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1 class="page-title"><i class="bi bi-gear"></i> Paramètres de l'entreprise</h1>
+</div>
+
+<div class="row g-3">
+  <div class="col-lg-8">
+    <form method="POST" enctype="multipart/form-data">
+      <div class="card mb-3">
+        <div class="card-header"><i class="bi bi-building me-2 text-success"></i>Informations de l'entreprise</div>
+        <div class="card-body">
+          <div class="row g-3">
+            <div class="col-12">
+              <label class="form-label">Nom de l'entreprise *</label>
+              <input type="text" class="form-control" name="name"
+                     value="{{ company.name }}" required/>
+            </div>
+            <div class="col-12">
+              <label class="form-label">Adresse</label>
+              <input type="text" class="form-control" name="address"
+                     value="{{ company.address or '' }}" placeholder="123 Chemin des Érables"/>
+            </div>
+            <div class="col-md-5">
+              <label class="form-label">Ville</label>
+              <input type="text" class="form-control" name="city" value="{{ company.city or '' }}"/>
+            </div>
+            <div class="col-md-3">
+              <label class="form-label">Province</label>
+              <select class="form-select" name="province">
+                {% for prov in ['QC','ON','NB','NS','PE','NL','MB','SK','AB','BC'] %}
+                <option value="{{ prov }}" {% if company.province == prov %}selected{% endif %}>{{ prov }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">Code postal</label>
+              <input type="text" class="form-control" name="postal_code"
+                     value="{{ company.postal_code or '' }}" placeholder="G1A 0A1"/>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">Téléphone</label>
+              <input type="tel" class="form-control" name="phone"
+                     value="{{ company.phone or '' }}" placeholder="418-000-0000"/>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">Courriel</label>
+              <input type="email" class="form-control" name="email"
+                     value="{{ company.email or '' }}"/>
+            </div>
+            <div class="col-12">
+              <label class="form-label">Site web</label>
+              <input type="url" class="form-control" name="website"
+                     value="{{ company.website or '' }}" placeholder="https://www.monerable.ca"/>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card mb-3">
+        <div class="card-header"><i class="bi bi-percent me-2 text-success"></i>Numéros de taxes</div>
+        <div class="card-body">
+          <div class="row g-3">
+            <div class="col-md-6">
+              <label class="form-label">Numéro TPS (fédéral)</label>
+              <input type="text" class="form-control" name="tps_number"
+                     value="{{ company.tps_number or '' }}" placeholder="123456789 RT0001"/>
+              <div class="form-text">Taux: 5%</div>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">Numéro TVQ (provincial)</label>
+              <input type="text" class="form-control" name="tvq_number"
+                     value="{{ company.tvq_number or '' }}" placeholder="1234567890 TQ0001"/>
+              <div class="form-text">Taux: 9,975%</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card mb-3">
+        <div class="card-header"><i class="bi bi-image me-2 text-success"></i>Logo de l'entreprise</div>
+        <div class="card-body">
+          <div class="row g-3 align-items-center">
+            <div class="col-auto">
+              {% if company.logo_path %}
+              <img src="{{ url_for('static', filename=company.logo_path) }}"
+                   style="max-height:80px;max-width:200px;object-fit:contain;border-radius:8px"
+                   class="border p-1"/>
+              {% else %}
+              <div class="text-muted border rounded p-3 text-center" style="width:160px;height:80px;line-height:60px">
+                <i class="bi bi-image fs-3 text-muted"></i>
+              </div>
+              {% endif %}
+            </div>
+            <div class="col">
+              <label class="form-label">Téléverser un logo</label>
+              <input type="file" class="form-control" name="logo" accept=".png,.jpg,.jpeg,.gif,.webp"/>
+              <div class="form-text">Format: PNG, JPG, GIF (max 16 Mo). Taille recommandée: 200×80px.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="d-flex gap-2">
+        <button type="submit" class="btn btn-primary">
+          <i class="bi bi-check-lg me-1"></i>Sauvegarder les paramètres
+        </button>
+      </div>
+    </form>
+  </div>
+
+  <!-- Info panel -->
+  <div class="col-lg-4">
+    <div class="card mb-3">
+      <div class="card-header"><i class="bi bi-info-circle me-2 text-success"></i>Informations du système</div>
+      <div class="card-body small">
+        <dl class="row mb-0">
+          <dt class="col-6 text-muted">Version</dt>
+          <dd class="col-6">1.0.0</dd>
+          <dt class="col-6 text-muted">Base de données</dt>
+          <dd class="col-6">SQLite</dd>
+          <dt class="col-6 text-muted">TPS</dt>
+          <dd class="col-6">5%</dd>
+          <dt class="col-6 text-muted">TVQ</dt>
+          <dd class="col-6">9,975%</dd>
+        </dl>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header"><i class="bi bi-keyboard me-2 text-success"></i>Navigation rapide</div>
+      <div class="card-body p-0">
+        <div class="list-group list-group-flush">
+          <a href="{{ url_for('products') }}" class="list-group-item list-group-item-action small">
+            <i class="bi bi-box-seam me-2 text-success"></i>Gérer les produits
+          </a>
+          <a href="{{ url_for('customers') }}" class="list-group-item list-group-item-action small">
+            <i class="bi bi-people me-2 text-success"></i>Gérer les clients
+          </a>
+          <a href="{{ url_for('subscriptions') }}" class="list-group-item list-group-item-action small">
+            <i class="bi bi-star me-2 text-success"></i>Gérer les abonnements
+          </a>
+          <a href="{{ url_for('tax_report') }}" class="list-group-item list-group-item-action small">
+            <i class="bi bi-percent me-2 text-success"></i>Rapport de taxes
+          </a>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

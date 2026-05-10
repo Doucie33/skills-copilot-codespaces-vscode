@@ -1,0 +1,152 @@
+{% extends "base.html" %}
+{% block title %}Historique — {{ customer.first_name }} {{ customer.last_name }}{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <a href="{{ url_for('customers') }}" class="btn btn-sm btn-outline-secondary mb-2">
+      <i class="bi bi-arrow-left me-1"></i>Retour aux clients
+    </a>
+    <h1 class="page-title mb-0">
+      <i class="bi bi-clock-history"></i>
+      Historique — {{ customer.first_name }} {{ customer.last_name }}
+    </h1>
+    <code class="text-muted small">{{ customer.customer_id }}</code>
+  </div>
+  <a href="{{ url_for('create_invoice') }}" class="btn btn-primary">
+    <i class="bi bi-file-earmark-plus me-1"></i>Nouvelle facture
+  </a>
+</div>
+
+<div class="row g-3 mb-4">
+  <!-- Client info -->
+  <div class="col-lg-4">
+    <div class="card">
+      <div class="card-header"><i class="bi bi-person-badge me-2 text-success"></i>Fiche client</div>
+      <div class="card-body">
+        <dl class="row mb-0 small">
+          <dt class="col-5 text-muted">Téléphone</dt>
+          <dd class="col-7">{{ customer.phone or '—' }}</dd>
+          <dt class="col-5 text-muted">Courriel</dt>
+          <dd class="col-7">{{ customer.email or '—' }}</dd>
+          <dt class="col-5 text-muted">Adresse</dt>
+          <dd class="col-7">{{ customer.address or '—' }}{% if customer.city %}, {{ customer.city }}{% endif %}</dd>
+          <dt class="col-5 text-muted">Province</dt>
+          <dd class="col-7">{{ customer.province or 'QC' }}</dd>
+          <dt class="col-5 text-muted">Abonnement</dt>
+          <dd class="col-7">
+            {% if sub %}
+            <span class="badge bg-info text-dark">{{ sub.name }}</span>
+            {% if customer.subscription_start %}
+            <div class="text-muted mt-1">Du {{ customer.subscription_start }}
+              {% if customer.subscription_end %}au {{ customer.subscription_end }}{% endif %}
+            </div>
+            {% endif %}
+            {% else %}
+            <span class="text-muted">Aucun</span>
+            {% endif %}
+          </dd>
+          {% if customer.notes %}
+          <dt class="col-5 text-muted">Notes</dt>
+          <dd class="col-7">{{ customer.notes }}</dd>
+          {% endif %}
+        </dl>
+      </div>
+    </div>
+
+    <!-- Stats summary -->
+    <div class="card mt-3">
+      <div class="card-header"><i class="bi bi-bar-chart me-2 text-success"></i>Statistiques</div>
+      <div class="card-body">
+        <div class="row g-3 text-center">
+          <div class="col-6">
+            <div class="text-muted small">Factures</div>
+            <div class="fs-4 fw-bold text-success">{{ invoices|length }}</div>
+          </div>
+          <div class="col-6">
+            <div class="text-muted small">Total dépensé</div>
+            <div class="fs-4 fw-bold text-success">{{ "%.2f"|format(total_spent) }} $</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Top products + history -->
+  <div class="col-lg-8">
+    <!-- Top products -->
+    <div class="card mb-3">
+      <div class="card-header"><i class="bi bi-trophy me-2 text-warning"></i>Produits les plus achetés</div>
+      <div class="card-body p-0">
+        {% if top_products %}
+        <div class="table-responsive">
+          <table class="table table-sm table-hover mb-0">
+            <thead>
+              <tr><th>#</th><th>Produit</th><th class="text-end">Quantité totale</th><th class="text-end">Dépense totale</th></tr>
+            </thead>
+            <tbody>
+              {% for i, p in enumerate(top_products) %}
+              <tr>
+                <td><span class="product-rank rank-{{ i+1 }}">{{ i+1 }}</span></td>
+                <td class="fw-semibold">{{ p.product_name }}</td>
+                <td class="text-end">{{ p.total_qty }}</td>
+                <td class="text-end">{{ "%.2f"|format(p.total_spent) }} $</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% else %}
+        <div class="text-center text-muted py-4">Aucun achat enregistré.</div>
+        {% endif %}
+      </div>
+    </div>
+
+    <!-- Invoice timeline -->
+    <div class="card">
+      <div class="card-header"><i class="bi bi-clock-history me-2"></i>Historique des achats</div>
+      <div class="card-body">
+        {% if invoices %}
+        <div class="history-timeline">
+          {% for inv in invoices %}
+          <div class="history-item">
+            <div class="d-flex justify-content-between align-items-start">
+              <div>
+                <div class="fw-semibold">{{ inv.invoice_number }}</div>
+                <div class="text-muted small">{{ inv.date }}</div>
+              </div>
+              <div class="text-end">
+                <div class="fw-bold text-success">{{ "%.2f"|format(inv.total) }} $</div>
+                <span class="badge bg-{{ 'success' if inv.status == 'payée' else 'warning' }} small">
+                  {{ inv.status }}
+                </span>
+              </div>
+            </div>
+            {% if inv.items %}
+            <div class="mt-2">
+              {% for item in inv.items %}
+              <span class="badge bg-light text-dark border me-1 mb-1" style="font-size:0.72rem">
+                {{ item.product_name }} × {{ item.quantity }}
+              </span>
+              {% endfor %}
+            </div>
+            {% endif %}
+            <div class="mt-1">
+              <a href="{{ url_for('view_invoice', invoice_number=inv.invoice_number) }}"
+                 class="btn btn-xs btn-outline-primary" style="font-size:0.75rem;padding:2px 8px">
+                <i class="bi bi-eye me-1"></i>Voir
+              </a>
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+        {% else %}
+        <div class="text-center text-muted py-4">
+          <i class="bi bi-clock-history fs-2 d-block mb-2"></i>Aucun achat enregistré.
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

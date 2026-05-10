@@ -1,0 +1,242 @@
+{% extends "base.html" %}
+{% block title %}Comptabilité{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1 class="page-title"><i class="bi bi-journal-text"></i> Comptabilité — Dépenses</h1>
+  <div class="d-flex gap-2">
+    <a href="{{ url_for('export_accounting_csv') }}" class="btn btn-outline-success">
+      <i class="bi bi-filetype-csv me-1"></i>Export CSV
+    </a>
+    <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#entryModal" onclick="openNew()">
+      <i class="bi bi-plus-lg me-1"></i>Nouvelle entrée
+    </button>
+  </div>
+</div>
+
+<!-- Summary -->
+{% set total_subtotal = entries | sum(attribute='subtotal') %}
+{% set total_tps = entries | sum(attribute='tps_amount') %}
+{% set total_tvq = entries | sum(attribute='tvq_amount') %}
+{% set total_total = entries | sum(attribute='total') %}
+
+<div class="row g-3 mb-4">
+  <div class="col-md-3">
+    <div class="stat-card bg-green">
+      <div class="stat-label">Total dépenses</div>
+      <div class="stat-value">{{ "%.2f"|format(total_total) }} $</div>
+      <i class="bi bi-journal-text stat-icon"></i>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="stat-card bg-amber">
+      <div class="stat-label">Sous-total</div>
+      <div class="stat-value">{{ "%.2f"|format(total_subtotal) }} $</div>
+      <i class="bi bi-receipt stat-icon"></i>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="stat-card bg-blue">
+      <div class="stat-label">TPS payée</div>
+      <div class="stat-value">{{ "%.2f"|format(total_tps) }} $</div>
+      <i class="bi bi-percent stat-icon"></i>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="stat-card bg-purple">
+      <div class="stat-label">TVQ payée</div>
+      <div class="stat-value">{{ "%.2f"|format(total_tvq) }} $</div>
+      <i class="bi bi-percent stat-icon"></i>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-hover mb-0" id="accountingTable">
+        <thead>
+          <tr>
+            <th>N° Entrée</th><th>Fournisseur</th><th>Description</th>
+            <th>Date</th><th>Catégorie</th>
+            <th class="text-end">Sous-total</th>
+            <th class="text-end">TPS</th>
+            <th class="text-end">TVQ</th>
+            <th class="text-end">Total</th><th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for e in entries %}
+          <tr>
+            <td><code class="small">{{ e.entry_number }}</code></td>
+            <td class="fw-semibold">{{ e.supplier }}</td>
+            <td class="text-muted small">{{ e.description or '—' }}</td>
+            <td>{{ e.date }}</td>
+            <td><span class="badge bg-secondary">{{ e.category }}</span></td>
+            <td class="text-end">{{ "%.2f"|format(e.subtotal) }} $</td>
+            <td class="text-end text-muted">{{ "%.2f"|format(e.tps_amount) }} $</td>
+            <td class="text-end text-muted">{{ "%.2f"|format(e.tvq_amount) }} $</td>
+            <td class="text-end fw-bold">{{ "%.2f"|format(e.total) }} $</td>
+            <td>
+              <button class="btn btn-sm btn-outline-danger" onclick="deleteEntry({{ e.id }})">
+                <i class="bi bi-trash"></i>
+              </button>
+            </td>
+          </tr>
+          {% else %}
+          <tr><td colspan="10" class="text-center text-muted py-5">
+            <i class="bi bi-journal-text fs-2 d-block mb-2"></i>Aucune entrée comptable.
+          </td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- Modal -->
+<div class="modal fade" id="entryModal" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Nouvelle entrée comptable</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="row g-3">
+          <div class="col-md-6">
+            <label class="form-label">Fournisseur *</label>
+            <input type="text" class="form-control" id="eSupplier" placeholder="Nom du fournisseur"/>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Date *</label>
+            <input type="date" class="form-control" id="eDate"/>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Catégorie</label>
+            <select class="form-select" id="eCategory">
+              <option>Fournitures</option>
+              <option>Équipement</option>
+              <option>Transport</option>
+              <option>Marketing</option>
+              <option>Services professionnels</option>
+              <option>Énergie/Carburant</option>
+              <option>Entretien</option>
+              <option>Loyer</option>
+              <option>Assurance</option>
+              <option>Autre</option>
+            </select>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Description</label>
+            <input type="text" class="form-control" id="eDescription"/>
+          </div>
+          <div class="col-md-3">
+            <label class="form-label">Sous-total ($)</label>
+            <input type="number" class="form-control" id="eSubtotal" step="0.01" min="0"
+                   value="0" oninput="calcEntry()"/>
+          </div>
+          <div class="col-md-3">
+            <label class="form-label">TPS ($)</label>
+            <input type="number" class="form-control" id="eTPS" step="0.01" min="0"
+                   value="0" oninput="calcEntry()"/>
+          </div>
+          <div class="col-md-3">
+            <label class="form-label">TVQ ($)</label>
+            <input type="number" class="form-control" id="eTVQ" step="0.01" min="0"
+                   value="0" oninput="calcEntry()"/>
+          </div>
+          <div class="col-md-3">
+            <label class="form-label">Total ($)</label>
+            <input type="number" class="form-control fw-bold" id="eTotal" step="0.01"
+                   value="0" oninput="syncTotal()"/>
+          </div>
+          <div class="col-12">
+            <div class="d-flex gap-2">
+              <button class="btn btn-sm btn-outline-secondary" onclick="autoCalcTPS()">
+                <i class="bi bi-calculator me-1"></i>Calculer TPS auto (5%)
+              </button>
+              <button class="btn btn-sm btn-outline-secondary" onclick="autoCalcTVQ()">
+                Calculer TVQ auto (9,975%)
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+        <button type="button" class="btn btn-primary" onclick="saveEntry()">
+          <i class="bi bi-check-lg me-1"></i>Enregistrer
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+$(function() {
+  $('#accountingTable').DataTable({
+    language: { url: 'https://cdn.datatables.net/plug-ins/1.13.8/i18n/fr-FR.json' },
+    order: [[3, 'desc']]
+  });
+  document.getElementById('eDate').value = new Date().toISOString().split('T')[0];
+});
+
+function openNew() {
+  ['eSupplier','eDescription'].forEach(id => document.getElementById(id).value = '');
+  ['eSubtotal','eTPS','eTVQ','eTotal'].forEach(id => document.getElementById(id).value = '0');
+  document.getElementById('eDate').value = new Date().toISOString().split('T')[0];
+  document.getElementById('eCategory').value = 'Fournitures';
+}
+
+function calcEntry() {
+  const sub = parseFloat(document.getElementById('eSubtotal').value) || 0;
+  const tps = parseFloat(document.getElementById('eTPS').value) || 0;
+  const tvq = parseFloat(document.getElementById('eTVQ').value) || 0;
+  document.getElementById('eTotal').value = (sub + tps + tvq).toFixed(2);
+}
+
+function syncTotal() {}
+
+function autoCalcTPS() {
+  const sub = parseFloat(document.getElementById('eSubtotal').value) || 0;
+  document.getElementById('eTPS').value = (sub * 0.05).toFixed(2);
+  calcEntry();
+}
+
+function autoCalcTVQ() {
+  const sub = parseFloat(document.getElementById('eSubtotal').value) || 0;
+  document.getElementById('eTVQ').value = (sub * 0.09975).toFixed(2);
+  calcEntry();
+}
+
+async function saveEntry() {
+  const data = {
+    supplier: document.getElementById('eSupplier').value.trim(),
+    date: document.getElementById('eDate').value,
+    category: document.getElementById('eCategory').value,
+    description: document.getElementById('eDescription').value.trim(),
+    subtotal: parseFloat(document.getElementById('eSubtotal').value) || 0,
+    tps_amount: parseFloat(document.getElementById('eTPS').value) || 0,
+    tvq_amount: parseFloat(document.getElementById('eTVQ').value) || 0,
+    total: parseFloat(document.getElementById('eTotal').value) || 0,
+  };
+  if (!data.supplier || !data.date) { alert('Fournisseur et date obligatoires.'); return; }
+  const res = await fetch('/api/accounting', {
+    method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(data)
+  });
+  const json = await res.json();
+  if (json.success) location.reload();
+  else alert('Erreur: ' + json.error);
+}
+
+async function deleteEntry(id) {
+  if (!confirm('Supprimer cette entrée?')) return;
+  const res = await fetch(`/api/accounting/${id}`, { method: 'DELETE' });
+  const json = await res.json();
+  if (json.success) location.reload();
+}
+</script>
+{% endblock %}
