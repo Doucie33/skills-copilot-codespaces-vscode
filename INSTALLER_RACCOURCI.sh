@@ -7,6 +7,7 @@
 clear
 
 VERT='\033[0;32m'
+ROUGE='\033[0;31m'
 GRAS='\033[1m'
 NC='\033[0m'
 
@@ -19,23 +20,40 @@ echo ""
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 APP_DIR="$SCRIPT_DIR/erabliere-app"
 LAUNCHER="$APP_DIR/lancer.sh"
-DESKTOP_FILE="$HOME/Desktop/Erabliere.desktop"
 ICON_FILE="$APP_DIR/static/erabliere_icon.png"
 
-# ── Créer l'icône PNG (feuille d'érable verte) ────────────────────────────
+# ── Trouver le vrai dossier Bureau (fr/en) ────────────────────────────────
+BUREAU=""
+for candidate in "$HOME/Bureau" "$HOME/Desktop" "$HOME/Рабочий стол"; do
+    if [ -d "$candidate" ]; then
+        BUREAU="$candidate"
+        break
+    fi
+done
+# Si aucun trouvé, utiliser xdg-user-dir
+if [ -z "$BUREAU" ]; then
+    BUREAU="$(xdg-user-dir DESKTOP 2>/dev/null)"
+fi
+# Créer le dossier si inexistant
+if [ -z "$BUREAU" ] || [ ! -d "$BUREAU" ]; then
+    BUREAU="$HOME/Bureau"
+    mkdir -p "$BUREAU"
+fi
+
+DESKTOP_FILE="$BUREAU/Erabliere.desktop"
+echo "  Bureau détecté : $BUREAU"
+
+# ── Créer l'icône PNG ─────────────────────────────────────────────────────
 echo "  Création de l'icône..."
-python3 - << 'PYEOF'
-import os, sys
+python3 - "$APP_DIR" << 'PYEOF'
+import sys, os, math
 try:
-    from PIL import Image, ImageDraw, ImageFont
+    from PIL import Image, ImageDraw
+    app_dir = sys.argv[1]
     size = 256
     img = Image.new('RGBA', (size, size), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
-    # Fond vert arrondi
-    draw.rounded_rectangle([8, 8, size-8, size-8], radius=40,
-                            fill=(45, 106, 79, 255))
-    # Feuille d'érable simplifiée (étoile à 5 branches)
-    import math
+    draw.rounded_rectangle([8, 8, size-8, size-8], radius=40, fill=(45, 106, 79, 255))
     cx, cy = size//2, size//2 - 10
     r_out, r_in = 90, 38
     pts = []
@@ -44,37 +62,90 @@ try:
         r = r_out if i % 2 == 0 else r_in
         pts.append((cx + r * math.cos(angle), cy + r * math.sin(angle)))
     draw.polygon(pts, fill=(255, 255, 255, 230))
-    # Tige
-    draw.rounded_rectangle([cx-8, cy+50, cx+8, cy+90], radius=4,
-                            fill=(255, 255, 255, 200))
-    icon_path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                             'erabliere-app', 'static', 'erabliere_icon.png')
+    draw.rounded_rectangle([cx-8, cy+50, cx+8, cy+90], radius=4, fill=(255, 255, 255, 200))
+    icon_path = os.path.join(app_dir, 'static', 'erabliere_icon.png')
     img.save(icon_path)
-    print(f"  ✓ Icône créée : {icon_path}")
+    print(f"  ✓ Icône créée")
 except Exception as e:
-    print(f"  (icône par défaut sera utilisée : {e})")
+    print(f"  (icône générique utilisée)")
 PYEOF
 
 # ── Rendre le lanceur exécutable ──────────────────────────────────────────
 chmod +x "$LAUNCHER"
 
-# ── Installer les dépendances Python ──────────────────────────────────────
+# ── Installer Flask correctement ──────────────────────────────────────────
 echo ""
 echo "  Vérification des composants Python..."
-if ! python3 -c "import flask" 2>/dev/null; then
-    echo "  Installation de Flask (1-2 min)..."
-    pip3 install flask reportlab Pillow python-dateutil --quiet 2>/dev/null || \
-    python3 -m pip install flask reportlab Pillow python-dateutil --quiet 2>/dev/null
-    echo "  ✓ Composants installés"
+
+install_flask() {
+    # Essai 1 : pip3 avec --user
+    pip3 install flask reportlab Pillow python-dateutil --user --quiet 2>/dev/null && return 0
+    # Essai 2 : python3 -m pip avec --user
+    python3 -m pip install flask reportlab Pillow python-dateutil --user --quiet 2>/dev/null && return 0
+    # Essai 3 : avec sudo apt (système)
+    sudo apt-get install -y python3-flask python3-pil 2>/dev/null && return 0
+    return 1
+}
+
+if python3 -c "import flask" 2>/dev/null; then
+    echo "  ✓ Flask déjà installé"
 else
-    echo "  ✓ Composants déjà installés"
+    echo "  Installation de Flask (1-2 min)..."
+    if install_flask; then
+        echo "  ✓ Flask installé"
+    else
+        echo -e "  ${ROUGE}Erreur Flask — essai avec apt...${NC}"
+        sudo apt-get update -qq 2>/dev/null
+        sudo apt-get install -y python3-pip 2>/dev/null
+        pip3 install flask reportlab Pillow python-dateutil --user --quiet 2>/dev/null
+    fi
 fi
+
+# Vérification finale
+if python3 -c "import flask" 2>/dev/null; then
+    echo "  ✓ Flask opérationnel"
+else
+    echo -e "  ${ROUGE}⚠ Flask non trouvé — le logiciel pourrait ne pas démarrer${NC}"
+fi
+
+# ── Mettre à jour lancer.sh pour utiliser --user si nécessaire ────────────
+# (ajout de ~/.local/bin au PATH pour les modules --user)
+cat > "$LAUNCHER" << LAUNCHER_EOF
+#!/bin/bash
+SCRIPT_DIR="\$(cd "\$(dirname "\${BASH_SOURCE[0]}")" && pwd)"
+cd "\$SCRIPT_DIR"
+export PATH="\$HOME/.local/bin:\$PATH"
+export PYTHONPATH="\$HOME/.local/lib/python3\$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')/site-packages:\$PYTHONPATH"
+
+if ! python3 -c "import flask" 2>/dev/null; then
+    pip3 install flask reportlab Pillow python-dateutil --user --quiet 2>/dev/null
+fi
+
+pkill -f "python3 app.py" 2>/dev/null
+sleep 0.5
+
+python3 app.py &
+FLASK_PID=\$!
+
+for i in \$(seq 1 15); do
+    sleep 1
+    if curl -s http://localhost:5000 >/dev/null 2>&1; then
+        break
+    fi
+done
+
+xdg-open http://localhost:5000 2>/dev/null || \
+firefox http://localhost:5000 2>/dev/null || \
+chromium-browser http://localhost:5000 2>/dev/null
+
+wait \$FLASK_PID
+LAUNCHER_EOF
+chmod +x "$LAUNCHER"
 
 # ── Créer le fichier .desktop ──────────────────────────────────────────────
 echo ""
-echo "  Création du raccourci sur le bureau..."
+echo "  Création du raccourci sur le bureau : $DESKTOP_FILE"
 
-# Choisir l'icône (personnalisée ou système)
 if [ -f "$ICON_FILE" ]; then
     ICON_ENTRY="$ICON_FILE"
 else
@@ -93,19 +164,13 @@ Icon=$ICON_ENTRY
 Terminal=false
 StartupNotify=true
 Categories=Office;Finance;
-Keywords=erabliere;facture;client;comptabilite;
 EOF
 
 chmod +x "$DESKTOP_FILE"
 
-# Marquer comme approuvé (Kubuntu/KDE)
+# Marquer comme approuvé KDE/Gnome
 gio set "$DESKTOP_FILE" metadata::trusted true 2>/dev/null || true
-
-# ── Créer aussi un lanceur dans /usr/local/bin (optionnel) ────────────────
-# Pour lancer depuis n'importe où avec "erabliere"
-if [ -w "/usr/local/bin" ] || sudo -n true 2>/dev/null; then
-    sudo ln -sf "$LAUNCHER" /usr/local/bin/erabliere 2>/dev/null || true
-fi
+kwriteconfig5 --file "$DESKTOP_FILE" --group "Desktop Entry" --key X-KDE-SubstituteVariables false 2>/dev/null || true
 
 # ── Résultat ──────────────────────────────────────────────────────────────
 echo ""
@@ -116,14 +181,13 @@ echo ""
 echo -e "  ${GRAS}Pour lancer le logiciel :${NC}"
 echo "    → Double-cliquez sur l'icône « Érablière » sur votre bureau"
 echo ""
-echo "  Si l'icône n'apparaît pas de suite, appuyez sur F5 sur le bureau."
+echo "  Si KDE demande « Exécuter ou Afficher », choisissez : Exécuter"
+echo "  Si l'icône n'apparaît pas, appuyez sur F5 sur le bureau."
 echo ""
 
-# Ouvrir le bureau dans Dolphin pour montrer l'icône
-xdg-open "$HOME/Desktop" 2>/dev/null &
+xdg-open "$BUREAU" 2>/dev/null &
 sleep 1
 
-# Proposer de lancer maintenant
 read -p "  Lancer le logiciel maintenant ? (o/n) : " LANCER
 if [[ "$LANCER" == "o" || "$LANCER" == "O" ]]; then
     bash "$LAUNCHER"
