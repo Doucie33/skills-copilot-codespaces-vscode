@@ -4,8 +4,8 @@ Type=Application
 Name=Érablière
 GenericName=Logiciel de gestion d'érablière
 Comment=Clients, factures, stock, production — portable USB
-Exec=bash -c 'P=$(command -v python3 || command -v python); "$P" "$(dirname "$1")/lancer.py"' ignored %k
-Icon=erabliere-icon
+Exec=bash -c 'P=$(command -v python3 || command -v python); cd "$(dirname "%k")"; "$P" "$(dirname "%k")/lancer.py"'
+Icon=utilities-terminal
 Terminal=false
 Categories=Office;Finance;
 StartupNotify=true

@@ -16,6 +16,7 @@ APP_DIR     = os.path.join(BASE_DIR, 'erabliere-app')
 APP_PY      = os.path.join(APP_DIR, 'app.py')
 DATA_DIR    = os.path.join(BASE_DIR, 'data')
 DEPS_FLAG   = os.path.join(APP_DIR, '.deps_ok')
+ICON_SRC    = os.path.join(APP_DIR, 'static', 'erabliere_icon.png')
 
 # Indiquer à app.py où stocker les données (sur la clé USB, pas dans l'app)
 os.environ['ERABLIERE_DATA_DIR'] = DATA_DIR
@@ -36,6 +37,132 @@ def show_error(message):
         root.destroy()
     except Exception:
         print("ERREUR:", message)
+
+
+def create_desktop_shortcut():
+    """
+    Crée un raccourci .desktop local (~/Bureau ou ~/Desktop) avec
+    chemin absolu vers l'icône et le script — contourne les restrictions
+    FAT32 qui empêchent KDE/GNOME de faire confiance aux .desktop sur la clé.
+    """
+    if sys.platform == 'win32':
+        return  # Windows : pas besoin, LANCER.vbs suffit
+
+    # Trouver le Bureau
+    desktop = None
+    for candidate in (
+        os.path.join(os.path.expanduser('~'), 'Bureau'),
+        os.path.join(os.path.expanduser('~'), 'Desktop'),
+    ):
+        if os.path.isdir(candidate):
+            desktop = candidate
+            break
+    if desktop is None:
+        desktop = os.path.join(os.path.expanduser('~'), 'Desktop')
+        os.makedirs(desktop, exist_ok=True)
+
+    shortcut_path = os.path.join(desktop, 'Erabliere.desktop')
+
+    # Installer l'icône dans le thème utilisateur
+    icon_dir  = os.path.join(os.path.expanduser('~'), '.local', 'share', 'icons')
+    icon_dest = os.path.join(icon_dir, 'erabliere-icon.png')
+    icon_path = icon_dest if os.path.exists(icon_dest) else ''
+
+    if os.path.exists(ICON_SRC) and not os.path.exists(icon_dest):
+        try:
+            import shutil
+            os.makedirs(icon_dir, exist_ok=True)
+            shutil.copy2(ICON_SRC, icon_dest)
+            icon_path = icon_dest
+        except Exception:
+            pass
+
+    # Trouver python3
+    python_exe = sys.executable
+
+    # Écrire le fichier .desktop avec chemins absolus
+    content = (
+        '[Desktop Entry]\n'
+        'Version=1.0\n'
+        'Type=Application\n'
+        'Name=Érablière\n'
+        'GenericName=Logiciel de gestion d’érablière\n'
+        'Comment=Clients, factures, stock, production — portable USB\n'
+        f'Exec={python_exe} {BASE_DIR}/lancer.py\n'
+        f'Icon={icon_path}\n'
+        'Terminal=false\n'
+        'Categories=Office;Finance;\n'
+        'StartupNotify=true\n'
+    )
+
+    # Ne recréer que si le contenu a changé (nouvelle clé USB = nouveau chemin)
+    existing = ''
+    if os.path.exists(shortcut_path):
+        try:
+            with open(shortcut_path, 'r', encoding='utf-8') as fh:
+                existing = fh.read()
+        except Exception:
+            pass
+
+    if existing == content:
+        return  # déjà à jour, rien à faire
+
+    try:
+        with open(shortcut_path, 'w', encoding='utf-8') as fh:
+            fh.write(content)
+        os.chmod(shortcut_path, 0o755)
+    except Exception as e:
+        return  # silencieux : le raccourci est optionnel
+
+    # Marquer comme approuvé (GNOME + KDE)
+    for cmd in (
+        ['gio', 'set', shortcut_path, 'metadata::trusted', 'true'],
+        ['dbus-send', '--session', '--dest=org.freedesktop.FileManager1',
+         '--type=method_call', '/org/freedesktop/FileManager1',
+         'org.freedesktop.FileManager1.ShowItems',
+         f'array:string:file://{shortcut_path}', 'string:'],
+    ):
+        try:
+            subprocess.run(cmd, capture_output=True, timeout=3)
+        except Exception:
+            pass
+
+    # Notification tkinter (une seule fois — quand le fichier vient d'être créé)
+    if existing == '':
+        _notify_shortcut_created(desktop)
+
+
+def _notify_shortcut_created(desktop):
+    """Affiche brièvement un message de bienvenue."""
+    try:
+        import tkinter as tk
+        root = tk.Tk()
+        root.title("Érablière")
+        root.geometry("460x130")
+        root.resizable(False, False)
+        root.configure(bg='#1b4332')
+
+        root.update_idletasks()
+        x = (root.winfo_screenwidth()  - 460) // 2
+        y = (root.winfo_screenheight() - 130) // 2
+        root.geometry(f"460x130+{x}+{y}")
+
+        tk.Label(root,
+            text="\U0001f341  Raccourci Érablière créé sur votre Bureau",
+            bg='#1b4332', fg='white',
+            font=('Arial', 12, 'bold'), pady=16).pack()
+
+        tk.Label(root,
+            text=f"Utilisez l'icône dans  {desktop}\n"
+                 "pour lancer le logiciel la prochaine fois.",
+            bg='#1b4332', fg='#b7e4c7',
+            font=('Arial', 10)).pack()
+
+        # Fermeture automatique après 5 secondes
+        root.after(5000, root.destroy)
+        root.mainloop()
+    except Exception:
+        pass
 
 
 def install_deps():
@@ -67,30 +194,26 @@ def install_deps():
         root.resizable(False, False)
         root.configure(bg='#1b4332')
 
-        # Centrer la fenêtre
         root.update_idletasks()
         x = (root.winfo_screenwidth() - 420) // 2
         y = (root.winfo_screenheight() - 160) // 2
         root.geometry(f"420x160+{x}+{y}")
 
-        lbl_titre = tk.Label(root,
-            text="🍁  Érablière — Première installation",
+        tk.Label(root,
+            text="\U0001f341  Érablière — Première installation",
             bg='#1b4332', fg='white',
-            font=('Arial', 12, 'bold'), pady=14)
-        lbl_titre.pack()
+            font=('Arial', 12, 'bold'), pady=14).pack()
 
-        lbl_status = tk.Label(root,
+        tk.Label(root,
             text="Installation des composants en cours...\n"
                  "Connexion Internet requise (environ 30 secondes)",
             bg='#1b4332', fg='#b7e4c7',
-            font=('Arial', 10))
-        lbl_status.pack()
+            font=('Arial', 10)).pack()
 
-        lbl_note = tk.Label(root,
+        tk.Label(root,
             text="Cette étape n'aura lieu qu'une seule fois.",
             bg='#1b4332', fg='#74c69d',
-            font=('Arial', 9, 'italic'), pady=8)
-        lbl_note.pack()
+            font=('Arial', 9, 'italic'), pady=8).pack()
 
         def do_install():
             try:
@@ -149,6 +272,9 @@ def install_deps():
 
 
 def main():
+    # ── Créer le raccourci Bureau (contourne FAT32 / KDE trust) ──────────────
+    create_desktop_shortcut()
+
     # ── Vérifier que app.py est présent ──────────────────────────────────────
     if not os.path.exists(APP_PY):
         show_error(
@@ -164,7 +290,6 @@ def main():
 
     # ── Vérifier que flask est importable ────────────────────────────────────
     try:
-        # Ajouter le dossier utilisateur pip au path si nécessaire
         import site
         user_site = site.getusersitepackages()
         if user_site not in sys.path:
@@ -189,7 +314,6 @@ def main():
     os.chdir(APP_DIR)
     sys.path.insert(0, APP_DIR)
 
-    # Exécuter app.py comme module principal
     import importlib.util
     spec = importlib.util.spec_from_file_location('__main__', APP_PY)
     module = importlib.util.module_from_spec(spec)
