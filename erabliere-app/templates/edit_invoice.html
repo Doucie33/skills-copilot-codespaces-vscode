@@ -1,0 +1,387 @@
+{% extends "base.html" %}
+{% block title %}Modifier {{ invoice.invoice_number }}{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <a href="{{ url_for('view_invoice', invoice_number=invoice.invoice_number) }}"
+       class="btn btn-sm btn-outline-secondary mb-2">
+      <i class="bi bi-arrow-left me-1"></i>Retour
+    </a>
+    <h1 class="page-title mb-0"><i class="bi bi-pencil-square"></i> Modifier la facture</h1>
+  </div>
+  <button class="btn btn-primary" onclick="saveInvoice()">
+    <i class="bi bi-save me-1"></i>Enregistrer les modifications
+  </button>
+</div>
+
+<div class="row g-3">
+  <div class="col-lg-8">
+    <div class="card mb-3">
+      <div class="card-header">Informations de la facture</div>
+      <div class="card-body">
+        <div class="row g-3">
+          <div class="col-md-4">
+            <label class="form-label">N° Facture</label>
+            <input type="text" class="form-control" value="{{ invoice.invoice_number }}" readonly/>
+          </div>
+          <div class="col-md-4">
+            <label class="form-label">Date *</label>
+            <input type="date" class="form-control" id="invDate" value="{{ invoice.date }}"/>
+          </div>
+          <div class="col-md-4">
+            <label class="form-label">Statut</label>
+            <select class="form-select" id="invStatus">
+              <option value="payée" {% if invoice.status == 'payée' %}selected{% endif %}>Payée</option>
+              <option value="en attente" {% if invoice.status == 'en attente' %}selected{% endif %}>En attente</option>
+              <option value="annulée" {% if invoice.status == 'annulée' %}selected{% endif %}>Annulée</option>
+            </select>
+          </div>
+          <div class="col-12">
+            <label class="form-label">Client *</label>
+            <select class="form-select" id="invCustomer" onchange="updateCustomerInfo()">
+              <option value="">— Sélectionner un client —</option>
+              {% for c in customers %}
+              <option value="{{ c.customer_id }}"
+                data-name="{{ c.first_name }} {{ c.last_name }}"
+                data-address="{{ c.address or '' }}"
+                data-city="{{ c.city or '' }}"
+                data-phone="{{ c.phone or '' }}"
+                {% if c.customer_id == invoice.customer_id %}selected{% endif %}>
+                {{ c.first_name }} {{ c.last_name }}{% if c.city %} — {{ c.city }}{% endif %}
+              </option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-12" id="customerInfoBox">
+            <div class="alert alert-light border py-2 px-3 small">
+              <i class="bi bi-person-fill me-1 text-success"></i>
+              <span id="customerInfoText">{{ invoice.customer_name }}</span>
+              <span id="discountBadge" class="badge bg-warning text-dark ms-2" style="display:none"></span>
+            </div>
+          </div>
+          <div class="col-12">
+            <label class="form-label">Notes</label>
+            <textarea class="form-control" id="invNotes" rows="1">{{ invoice.notes or '' }}</textarea>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header d-flex align-items-center justify-content-between">
+        <span><i class="bi bi-list-ul me-2 text-success"></i>Produits</span>
+        <button class="btn btn-sm btn-success" onclick="addLine()">
+          <i class="bi bi-plus-lg me-1"></i>Ajouter un produit
+        </button>
+      </div>
+      <div class="card-body">
+        <div id="invoiceLines"></div>
+        <div class="text-muted small text-center mt-2" id="emptyLines" style="display:none">
+          Cliquez sur « Ajouter un produit » pour commencer.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-4">
+    <div class="card sticky-top" style="top:20px">
+      <div class="card-header">Résumé</div>
+      <div class="card-body">
+        <div class="invoice-total-box">
+          <div class="d-flex justify-content-between mb-2">
+            <span class="text-muted">Sous-total</span>
+            <span id="sumSubtotal">0,00 $</span>
+          </div>
+          <div class="d-flex justify-content-between mb-2 text-warning" id="sumDiscountRow" style="display:none">
+            <span id="sumDiscountLabel">Rabais</span>
+            <span id="sumDiscount">0,00 $</span>
+          </div>
+          <div class="d-flex justify-content-between mb-2">
+            <span class="text-muted">TPS (5%)</span>
+            <span id="sumTPS">0,00 $</span>
+          </div>
+          <div class="d-flex justify-content-between mb-2">
+            <span class="text-muted">TVQ (9,975%)</span>
+            <span id="sumTVQ">0,00 $</span>
+          </div>
+          <hr/>
+          <div class="d-flex justify-content-between align-items-center">
+            <span class="fw-bold">TOTAL</span>
+            <span class="grand-total" id="sumTotal">0,00 $</span>
+          </div>
+        </div>
+        <div class="mt-3 d-grid">
+          <button class="btn btn-primary" onclick="saveInvoice()">
+            <i class="bi bi-save me-1"></i>Enregistrer les modifications
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const PRODUCTS = {{ products|tojson }};
+const TPS = {{ tps_rate }};
+const TVQ = {{ tvq_rate }};
+const INVOICE_NUM = {{ invoice.invoice_number|tojson }};
+const EXISTING_ITEMS = {{ items|tojson }};
+const EXISTING_DISCOUNT = {
+  label: {{ (invoice.discount_label or '')|tojson }},
+  amount: {{ invoice.discount_amount or 0 }}
+};
+
+let lineCount = 0;
+let currentDiscount = { type: 'none', value: 0, label: EXISTING_DISCOUNT.label };
+
+function fmt(n) { return n.toFixed(2).replace('.', ',') + ' $'; }
+
+async function updateCustomerInfo() {
+  const sel = document.getElementById('invCustomer');
+  const opt = sel.options[sel.selectedIndex];
+  currentDiscount = { type: 'none', value: 0, label: '' };
+
+  if (sel.value) {
+    document.getElementById('customerInfoText').textContent =
+      `${opt.dataset.name} — ${opt.dataset.address || ''} ${opt.dataset.city || ''} — Tél: ${opt.dataset.phone || '—'}`;
+    try {
+      const res = await fetch(`/api/customers/${sel.value}/subscription`);
+      const json = await res.json();
+      if (json.has_subscription && json.subscription && json.subscription.discount_type !== 'none') {
+        const sub = json.subscription;
+        currentDiscount = {
+          type: sub.discount_type,
+          value: parseFloat(sub.discount_value) || 0,
+          label: `Rabais ${sub.name}`
+        };
+      }
+    } catch(e) {}
+    updateDiscountBadge();
+  }
+  updateTotals();
+}
+
+function updateDiscountBadge() {
+  const badge = document.getElementById('discountBadge');
+  if (currentDiscount.type !== 'none' && currentDiscount.value > 0) {
+    const label = currentDiscount.type === 'percent'
+      ? `${currentDiscount.value}%` : `${currentDiscount.value.toFixed(2)} $`;
+    badge.textContent = `Rabais abonnement: -${label}`;
+    badge.style.display = '';
+  } else {
+    badge.style.display = 'none';
+  }
+}
+
+function addLine(productId, productName, unitPrice, qty, taxType) {
+  if (document.getElementById('invoiceLines').children.length === 0) {
+    document.getElementById('emptyLines').style.display = 'none';
+  }
+  lineCount++;
+  const id = lineCount;
+
+  const productOptions = PRODUCTS.map(p =>
+    `<option value="${p.product_id}" data-price="${p.price}" data-tax="${p.tax_type}" data-name="${p.name}"
+      ${productId === p.product_id ? 'selected' : ''}>
+      [${p.product_id}] ${p.name} — ${p.price.toFixed(2)} $
+    </option>`
+  ).join('');
+
+  const html = `
+  <div class="invoice-line" id="line-${id}">
+    <div class="row g-2 align-items-end">
+      <div class="col-12 col-md-4">
+        <label class="form-label small mb-1">Produit</label>
+        <select class="form-select form-select-sm" id="lProd-${id}" onchange="onProductChange(${id})">
+          <option value="">— Sélectionner —</option>
+          ${productOptions}
+        </select>
+      </div>
+      <div class="col-6 col-md-2">
+        <label class="form-label small mb-1">P.U. ($)</label>
+        <input type="number" class="form-control form-control-sm" id="lPU-${id}"
+          step="0.01" min="0" value="${unitPrice || 0}" oninput="calcLine(${id})"/>
+      </div>
+      <div class="col-6 col-md-1">
+        <label class="form-label small mb-1">Qté</label>
+        <input type="number" class="form-control form-control-sm" id="lQty-${id}"
+          step="0.01" min="0.01" value="${qty || 1}" oninput="calcLine(${id})"/>
+      </div>
+      <div class="col-6 col-md-2">
+        <label class="form-label small mb-1">Prix</label>
+        <input type="text" class="form-control form-control-sm" id="lPrix-${id}" readonly value="0,00 $"/>
+      </div>
+      <div class="col-6 col-md-2">
+        <label class="form-label small mb-1">Taxe</label>
+        <input type="text" class="form-control form-control-sm" id="lTax-${id}" readonly value="0,00 $"/>
+      </div>
+      <div class="col-6 col-md-1">
+        <label class="form-label small mb-1">Total</label>
+        <input type="text" class="form-control form-control-sm fw-bold" id="lTotal-${id}" readonly value="0,00 $"/>
+      </div>
+      <div class="col-auto">
+        <button class="btn btn-sm btn-outline-danger" onclick="removeLine(${id})">
+          <i class="bi bi-x-lg"></i>
+        </button>
+      </div>
+      <div class="col-12">
+        <div class="d-flex gap-2 align-items-center">
+          <span class="text-muted small">Taxe:</span>
+          <select class="form-select form-select-sm" style="width:auto" id="lTaxType-${id}" onchange="calcLine(${id})">
+            <option value="tps_tvq" ${(taxType||'tps_tvq')==='tps_tvq'?'selected':''}>TPS + TVQ</option>
+            <option value="tps_only" ${taxType==='tps_only'?'selected':''}>TPS seul.</option>
+            <option value="tvq_only" ${taxType==='tvq_only'?'selected':''}>TVQ seul.</option>
+            <option value="none" ${taxType==='none'?'selected':''}>Aucune</option>
+          </select>
+          <span class="badge badge-tax" id="lTaxBadge-${id}">TPS+TVQ</span>
+        </div>
+      </div>
+    </div>
+  </div>`;
+
+  document.getElementById('invoiceLines').insertAdjacentHTML('beforeend', html);
+  calcLine(id);
+}
+
+function onProductChange(id) {
+  const sel = document.getElementById(`lProd-${id}`);
+  const opt = sel.options[sel.selectedIndex];
+  if (opt.dataset.price) {
+    document.getElementById(`lPU-${id}`).value = opt.dataset.price;
+    document.getElementById(`lTaxType-${id}`).value = opt.dataset.tax || 'tps_tvq';
+  }
+  calcLine(id);
+}
+
+function calcLine(id) {
+  const pu = parseFloat(document.getElementById(`lPU-${id}`).value) || 0;
+  const qty = parseFloat(document.getElementById(`lQty-${id}`).value) || 0;
+  const taxType = document.getElementById(`lTaxType-${id}`).value;
+  const subtotal = pu * qty;
+  let tps = 0, tvq = 0;
+  if (taxType === 'tps_tvq') { tps = subtotal * TPS; tvq = subtotal * TVQ; }
+  else if (taxType === 'tps_only') { tps = subtotal * TPS; }
+  else if (taxType === 'tvq_only') { tvq = subtotal * TVQ; }
+  const taxAmt = tps + tvq;
+  document.getElementById(`lPrix-${id}`).value = fmt(subtotal);
+  document.getElementById(`lTax-${id}`).value = fmt(taxAmt);
+  document.getElementById(`lTotal-${id}`).value = fmt(subtotal + taxAmt);
+  const badge = document.getElementById(`lTaxBadge-${id}`);
+  const labels = {tps_tvq:'TPS+TVQ',tps_only:'TPS seul.',tvq_only:'TVQ seul.',none:'Aucune'};
+  badge.textContent = labels[taxType];
+  badge.className = `badge badge-tax tax-${taxType}`;
+  updateTotals();
+}
+
+function removeLine(id) {
+  document.getElementById(`line-${id}`).remove();
+  if (!document.getElementById('invoiceLines').children.length) {
+    document.getElementById('emptyLines').style.display = '';
+  }
+  updateTotals();
+}
+
+function updateTotals() {
+  let subtotal = 0, tpsTotal = 0, tvqTotal = 0;
+  document.querySelectorAll('[id^="line-"]').forEach(line => {
+    const id = line.id.replace('line-', '');
+    const pu = parseFloat(document.getElementById(`lPU-${id}`).value) || 0;
+    const qty = parseFloat(document.getElementById(`lQty-${id}`).value) || 0;
+    const taxType = document.getElementById(`lTaxType-${id}`).value;
+    const sub = pu * qty;
+    subtotal += sub;
+    if (taxType === 'tps_tvq') { tpsTotal += sub * TPS; tvqTotal += sub * TVQ; }
+    else if (taxType === 'tps_only') { tpsTotal += sub * TPS; }
+    else if (taxType === 'tvq_only') { tvqTotal += sub * TVQ; }
+  });
+
+  let discountAmt = 0;
+  const discRow = document.getElementById('sumDiscountRow');
+  if (currentDiscount.type !== 'none' && currentDiscount.value > 0 && subtotal > 0) {
+    discountAmt = currentDiscount.type === 'percent'
+      ? subtotal * currentDiscount.value / 100
+      : Math.min(currentDiscount.value, subtotal);
+    discountAmt = Math.round(discountAmt * 100) / 100;
+    const ratio = (subtotal - discountAmt) / subtotal;
+    tpsTotal = Math.round(tpsTotal * ratio * 100) / 100;
+    tvqTotal = Math.round(tvqTotal * ratio * 100) / 100;
+    discRow.style.display = '';
+    document.getElementById('sumDiscountLabel').textContent = currentDiscount.label || 'Rabais';
+    document.getElementById('sumDiscount').textContent = '-' + fmt(discountAmt);
+  } else {
+    discRow.style.display = 'none';
+  }
+
+  document.getElementById('sumSubtotal').textContent = fmt(subtotal);
+  document.getElementById('sumTPS').textContent = fmt(tpsTotal);
+  document.getElementById('sumTVQ').textContent = fmt(tvqTotal);
+  document.getElementById('sumTotal').textContent = fmt(subtotal - discountAmt + tpsTotal + tvqTotal);
+}
+
+async function saveInvoice() {
+  const items = [];
+  let subtotal = 0;
+  document.querySelectorAll('[id^="line-"]').forEach(line => {
+    const id = line.id.replace('line-', '');
+    const sel = document.getElementById(`lProd-${id}`);
+    const opt = sel.options[sel.selectedIndex];
+    if (!sel.value) return;
+    const pu = parseFloat(document.getElementById(`lPU-${id}`).value) || 0;
+    const qty = parseFloat(document.getElementById(`lQty-${id}`).value) || 1;
+    subtotal += pu * qty;
+    items.push({
+      product_id: sel.value,
+      product_name: opt.dataset.name,
+      unit_price: pu,
+      quantity: qty,
+      tax_type: document.getElementById(`lTaxType-${id}`).value,
+    });
+  });
+
+  const customerId = document.getElementById('invCustomer').value;
+  if (!customerId) { alert('Veuillez sélectionner un client.'); return; }
+  if (!items.length) { alert('Ajoutez au moins un produit.'); return; }
+
+  let discountAmt = 0;
+  if (currentDiscount.type !== 'none' && currentDiscount.value > 0 && subtotal > 0) {
+    discountAmt = currentDiscount.type === 'percent'
+      ? subtotal * currentDiscount.value / 100
+      : Math.min(currentDiscount.value, subtotal);
+    discountAmt = Math.round(discountAmt * 100) / 100;
+  }
+
+  const data = {
+    customer_id: customerId,
+    date: document.getElementById('invDate').value,
+    status: document.getElementById('invStatus').value,
+    notes: document.getElementById('invNotes').value,
+    discount_label: currentDiscount.label || '',
+    discount_amount: discountAmt,
+    items,
+  };
+
+  const res = await fetch(`/api/invoices/${INVOICE_NUM}`, {
+    method: 'PUT',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify(data)
+  });
+  const json = await res.json();
+  if (json.success) {
+    window.location.href = `/invoices/${INVOICE_NUM}/view`;
+  } else {
+    alert('Erreur: ' + json.error);
+  }
+}
+
+// Load existing items on page load
+document.addEventListener('DOMContentLoaded', function() {
+  EXISTING_ITEMS.forEach(item => {
+    addLine(item.product_id, item.product_name, item.unit_price, item.quantity, item.tax_type);
+  });
+  updateCustomerInfo();
+});
+</script>
+{% endblock %}

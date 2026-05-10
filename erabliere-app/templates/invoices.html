@@ -88,6 +88,12 @@
                    class="btn btn-sm btn-outline-primary" title="Voir">
                   <i class="bi bi-eye"></i>
                 </a>
+                {% if inv.status != 'payée' %}
+                <a href="{{ url_for('edit_invoice', invoice_number=inv.invoice_number) }}"
+                   class="btn btn-sm btn-outline-warning" title="Modifier">
+                  <i class="bi bi-pencil"></i>
+                </a>
+                {% endif %}
                 <a href="{{ url_for('invoice_pdf', invoice_number=inv.invoice_number) }}"
                    class="btn btn-sm btn-outline-danger" title="PDF">
                   <i class="bi bi-file-earmark-pdf"></i>

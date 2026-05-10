@@ -38,6 +38,9 @@
     <li><a href="{{ url_for('subscriptions') }}" class="{% if request.endpoint == 'subscriptions' %}active{% endif %}">
       <i class="bi bi-star"></i> Abonnements
     </a></li>
+    <li><a href="{{ url_for('suppliers') }}" class="{% if request.endpoint == 'suppliers' %}active{% endif %}">
+      <i class="bi bi-truck"></i> Fournisseurs
+    </a></li>
 
     <li class="nav-section">Ventes</li>
     <li><a href="{{ url_for('create_invoice') }}" class="{% if request.endpoint == 'create_invoice' %}active{% endif %}">

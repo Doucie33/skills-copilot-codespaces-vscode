@@ -90,6 +90,9 @@ def gen_invoice_id(conn):
 def gen_accounting_id(conn):
     return gen_sequential_id(conn, 'accounting', 'ENT')
 
+def gen_supplier_id(conn):
+    return gen_sequential_id(conn, 'supplier', 'FRN')
+
 
 def init_db():
     conn = get_db()
@@ -196,9 +199,26 @@ def init_db():
         FOREIGN KEY (invoice_number) REFERENCES invoices(invoice_number)
     )''')
 
+    c.execute('''CREATE TABLE IF NOT EXISTS suppliers (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        supplier_id TEXT UNIQUE NOT NULL,
+        name TEXT NOT NULL,
+        contact_name TEXT DEFAULT '',
+        address TEXT DEFAULT '',
+        city TEXT DEFAULT '',
+        province TEXT DEFAULT 'QC',
+        postal_code TEXT DEFAULT '',
+        phone TEXT DEFAULT '',
+        email TEXT DEFAULT '',
+        notes TEXT DEFAULT '',
+        active INTEGER DEFAULT 1,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )''')
+
     c.execute('''CREATE TABLE IF NOT EXISTS accounting_entries (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         entry_number TEXT UNIQUE NOT NULL,
+        supplier_id TEXT DEFAULT '',
         supplier TEXT NOT NULL,
         description TEXT DEFAULT '',
         date DATE NOT NULL,
@@ -217,17 +237,38 @@ def init_db():
 
 
 def _migrate_db(conn):
-    """Ajoute les nouvelles colonnes aux bases existantes."""
+    """Ajoute les nouvelles tables et colonnes aux bases existantes."""
     c = conn.cursor()
-    migrations = [
-        ("id_counters", "CREATE TABLE IF NOT EXISTS id_counters (name TEXT PRIMARY KEY, value INTEGER DEFAULT 0)"),
+    table_migrations = [
+        "CREATE TABLE IF NOT EXISTS id_counters (name TEXT PRIMARY KEY, value INTEGER DEFAULT 0)",
+        """CREATE TABLE IF NOT EXISTS suppliers (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            supplier_id TEXT UNIQUE NOT NULL,
+            name TEXT NOT NULL,
+            contact_name TEXT DEFAULT '',
+            address TEXT DEFAULT '',
+            city TEXT DEFAULT '',
+            province TEXT DEFAULT 'QC',
+            postal_code TEXT DEFAULT '',
+            phone TEXT DEFAULT '',
+            email TEXT DEFAULT '',
+            notes TEXT DEFAULT '',
+            active INTEGER DEFAULT 1,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )""",
     ]
     col_migrations = [
         ("subscriptions", "discount_type", "TEXT DEFAULT 'none'"),
         ("subscriptions", "discount_value", "REAL DEFAULT 0"),
         ("invoices", "discount_label", "TEXT DEFAULT ''"),
         ("invoices", "discount_amount", "REAL DEFAULT 0"),
+        ("accounting_entries", "supplier_id", "TEXT DEFAULT ''"),
     ]
+    for sql in table_migrations:
+        try:
+            c.execute(sql)
+        except Exception:
+            pass
     for table, col, typ in col_migrations:
         try:
             c.execute(f"ALTER TABLE {table} ADD COLUMN {col} {typ}")
@@ -564,46 +605,122 @@ def api_delete_customer(customer_id):
 
 @app.route('/customers/<customer_id>/history')
 def customer_history(customer_id):
-    conn = get_db()
-    customer = row_to_dict(conn.execute(
-        'SELECT * FROM customers WHERE customer_id=?', (customer_id,)).fetchone())
-    if not customer:
+    try:
+        conn = get_db()
+        customer = row_to_dict(conn.execute(
+            'SELECT * FROM customers WHERE customer_id=?', (customer_id,)).fetchone())
+        if not customer:
+            conn.close()
+            return redirect(url_for('customers'))
+
+        invoices = rows_to_list(conn.execute(
+            'SELECT * FROM invoices WHERE customer_id=? ORDER BY date DESC',
+            (customer_id,)).fetchall())
+
+        for inv in invoices:
+            inv['items'] = rows_to_list(conn.execute(
+                'SELECT * FROM invoice_items WHERE invoice_number=?',
+                (inv['invoice_number'],)).fetchall())
+            inv.setdefault('discount_amount', 0)
+            inv.setdefault('discount_label', '')
+
+        top_products = rows_to_list(conn.execute('''
+            SELECT ii.product_name,
+                   SUM(ii.quantity) as total_qty,
+                   SUM(ii.line_total) as total_spent
+            FROM invoice_items ii
+            JOIN invoices inv ON inv.invoice_number=ii.invoice_number
+            WHERE inv.customer_id=?
+            GROUP BY ii.product_id, ii.product_name
+            ORDER BY total_qty DESC
+        ''', (customer_id,)).fetchall())
+
+        sub = None
+        if customer.get('subscription_id'):
+            sub = row_to_dict(conn.execute(
+                'SELECT * FROM subscriptions WHERE subscription_id=?',
+                (customer['subscription_id'],)).fetchone())
+
+        company = row_to_dict(conn.execute('SELECT * FROM company_settings WHERE id=1').fetchone())
         conn.close()
-        return redirect(url_for('customers'))
 
-    invoices = rows_to_list(conn.execute('''
-        SELECT * FROM invoices WHERE customer_id=?
-        ORDER BY date DESC''', (customer_id,)).fetchall())
+        total_spent = sum(float(inv.get('total', 0)) for inv in invoices)
+        return render_template('customer_history.html',
+                               customer=customer, invoices=invoices,
+                               top_products=top_products, sub=sub,
+                               total_spent=total_spent, company=company)
+    except Exception as e:
+        app.logger.error(f"customer_history error: {e}")
+        return f"<h2>Erreur serveur</h2><pre>{e}</pre><a href='/customers'>Retour</a>", 500
 
-    for inv in invoices:
-        inv['items'] = rows_to_list(conn.execute(
-            'SELECT * FROM invoice_items WHERE invoice_number=?',
-            (inv['invoice_number'],)).fetchall())
 
-    c = conn.cursor()
-    c.execute('''SELECT ii.product_name, SUM(ii.quantity) as total_qty,
-                        SUM(ii.line_total) as total_spent
-                 FROM invoice_items ii
-                 JOIN invoices inv ON inv.invoice_number=ii.invoice_number
-                 WHERE inv.customer_id=?
-                 GROUP BY ii.product_id ORDER BY total_qty DESC''', (customer_id,))
-    top_products = rows_to_list(c.fetchall())
+# ─── SUPPLIERS ───────────────────────────────────────────────────────────────
 
-    sub = None
-    if customer.get('subscription_id'):
-        sub = row_to_dict(conn.execute(
-            'SELECT * FROM subscriptions WHERE subscription_id=?',
-            (customer['subscription_id'],)).fetchone())
-
+@app.route('/suppliers')
+def suppliers():
+    conn = get_db()
+    sups = rows_to_list(conn.execute('SELECT * FROM suppliers WHERE active=1 ORDER BY name').fetchall())
     company = row_to_dict(conn.execute('SELECT * FROM company_settings WHERE id=1').fetchone())
     conn.close()
+    return render_template('suppliers.html', suppliers=sups, company=company)
 
-    total_spent = sum(inv['total'] for inv in invoices)
-    return render_template('customer_history.html',
-                           customer=customer, invoices=invoices,
-                           top_products=top_products, sub=sub,
-                           total_spent=total_spent, company=company)
+@app.route('/api/suppliers', methods=['GET'])
+def api_suppliers():
+    conn = get_db()
+    sups = rows_to_list(conn.execute('SELECT * FROM suppliers WHERE active=1 ORDER BY name').fetchall())
+    conn.close()
+    return jsonify(sups)
 
+@app.route('/api/suppliers', methods=['POST'])
+def api_create_supplier():
+    data = request.json
+    conn = get_db()
+    try:
+        sid = gen_supplier_id(conn)
+        conn.execute('''INSERT INTO suppliers
+            (supplier_id, name, contact_name, address, city, province,
+             postal_code, phone, email, notes)
+            VALUES (?,?,?,?,?,?,?,?,?,?)''',
+                     (sid, data['name'], data.get('contact_name', ''),
+                      data.get('address', ''), data.get('city', ''),
+                      data.get('province', 'QC'), data.get('postal_code', ''),
+                      data.get('phone', ''), data.get('email', ''),
+                      data.get('notes', '')))
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True, 'supplier_id': sid})
+    except Exception as e:
+        conn.close()
+        return jsonify({'success': False, 'error': str(e)}), 400
+
+@app.route('/api/suppliers/<sup_id>', methods=['PUT'])
+def api_update_supplier(sup_id):
+    data = request.json
+    conn = get_db()
+    try:
+        conn.execute('''UPDATE suppliers SET
+            name=?, contact_name=?, address=?, city=?, province=?,
+            postal_code=?, phone=?, email=?, notes=?, active=?
+            WHERE supplier_id=?''',
+                     (data['name'], data.get('contact_name', ''),
+                      data.get('address', ''), data.get('city', ''),
+                      data.get('province', 'QC'), data.get('postal_code', ''),
+                      data.get('phone', ''), data.get('email', ''),
+                      data.get('notes', ''), int(data.get('active', 1)), sup_id))
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True})
+    except Exception as e:
+        conn.close()
+        return jsonify({'success': False, 'error': str(e)}), 400
+
+@app.route('/api/suppliers/<sup_id>', methods=['DELETE'])
+def api_delete_supplier(sup_id):
+    conn = get_db()
+    conn.execute('UPDATE suppliers SET active=0 WHERE supplier_id=?', (sup_id,))
+    conn.commit()
+    conn.close()
+    return jsonify({'success': True})
 
 # ─── SUBSCRIPTIONS ──────────────────────────────────────────────────────────
 
@@ -778,6 +895,93 @@ def api_save_invoice():
         conn.close()
         return jsonify({'success': False, 'error': str(e)}), 400
 
+
+@app.route('/invoices/<invoice_number>/edit')
+def edit_invoice(invoice_number):
+    conn = get_db()
+    inv = row_to_dict(conn.execute(
+        'SELECT * FROM invoices WHERE invoice_number=?', (invoice_number,)).fetchone())
+    if not inv:
+        conn.close()
+        return redirect(url_for('invoices'))
+    items = rows_to_list(conn.execute(
+        'SELECT * FROM invoice_items WHERE invoice_number=?', (invoice_number,)).fetchall())
+    customers = rows_to_list(conn.execute(
+        'SELECT * FROM customers WHERE active=1 ORDER BY last_name, first_name').fetchall())
+    products = rows_to_list(conn.execute(
+        'SELECT * FROM products WHERE active=1 ORDER BY name').fetchall())
+    company = row_to_dict(conn.execute('SELECT * FROM company_settings WHERE id=1').fetchone())
+    conn.close()
+    return render_template('edit_invoice.html',
+                           invoice=inv, items=items,
+                           customers=customers, products=products,
+                           company=company, tps_rate=TPS_RATE, tvq_rate=TVQ_RATE)
+
+@app.route('/api/invoices/<invoice_number>', methods=['PUT'])
+def api_update_invoice(invoice_number):
+    data = request.json
+    conn = get_db()
+    try:
+        customer_id = data['customer_id']
+        cust = conn.execute('SELECT * FROM customers WHERE customer_id=?', (customer_id,)).fetchone()
+        customer_name = f"{cust['first_name']} {cust['last_name']}" if cust else data.get('customer_name', '')
+
+        subtotal = tps_total = tvq_total = 0
+        items = data.get('items', [])
+
+        for item in items:
+            qty = float(item['quantity'])
+            price = float(item['unit_price'])
+            sub, tps, tvq = calc_taxes(price, qty, item.get('tax_type', 'tps_tvq'))
+            item['_subtotal'] = sub
+            item['_tps'] = tps
+            item['_tvq'] = tvq
+            item['_total'] = round(sub + tps + tvq, 2)
+            subtotal += sub
+            tps_total += tps
+            tvq_total += tvq
+
+        subtotal = round(subtotal, 2)
+        discount_label = data.get('discount_label', '')
+        discount_amount = round(float(data.get('discount_amount', 0)), 2)
+
+        if discount_amount > 0 and subtotal > 0:
+            ratio = (subtotal - discount_amount) / subtotal
+            tps_total = round(tps_total * ratio, 2)
+            tvq_total = round(tvq_total * ratio, 2)
+
+        tps_total = round(tps_total, 2)
+        tvq_total = round(tvq_total, 2)
+        total = round(subtotal - discount_amount + tps_total + tvq_total, 2)
+
+        conn.execute('''UPDATE invoices SET
+            customer_id=?, customer_name=?, date=?,
+            subtotal=?, discount_label=?, discount_amount=?,
+            tps_amount=?, tvq_amount=?, total=?, status=?, notes=?
+            WHERE invoice_number=?''',
+                     (customer_id, customer_name, data.get('date'),
+                      subtotal, discount_label, discount_amount,
+                      tps_total, tvq_total, total,
+                      data.get('status', 'en attente'), data.get('notes', ''),
+                      invoice_number))
+
+        conn.execute('DELETE FROM invoice_items WHERE invoice_number=?', (invoice_number,))
+        for item in items:
+            conn.execute('''INSERT INTO invoice_items
+                (invoice_number, product_id, product_name, quantity,
+                 unit_price, tax_type, tps_amount, tvq_amount, line_total)
+                VALUES (?,?,?,?,?,?,?,?,?)''',
+                         (invoice_number, item['product_id'], item['product_name'],
+                          float(item['quantity']), float(item['unit_price']),
+                          item.get('tax_type', 'tps_tvq'),
+                          item['_tps'], item['_tvq'], item['_total']))
+
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True, 'invoice_number': invoice_number})
+    except Exception as e:
+        conn.close()
+        return jsonify({'success': False, 'error': str(e)}), 400
 
 @app.route('/invoices/<invoice_number>/view')
 def view_invoice(invoice_number):
@@ -1129,9 +1333,11 @@ def accounting():
     conn = get_db()
     entries = rows_to_list(conn.execute(
         'SELECT * FROM accounting_entries ORDER BY date DESC').fetchall())
+    sups = rows_to_list(conn.execute(
+        'SELECT * FROM suppliers WHERE active=1 ORDER BY name').fetchall())
     company = row_to_dict(conn.execute('SELECT * FROM company_settings WHERE id=1').fetchone())
     conn.close()
-    return render_template('accounting.html', entries=entries, company=company)
+    return render_template('accounting.html', entries=entries, suppliers=sups, company=company)
 
 
 @app.route('/api/accounting', methods=['POST'])
@@ -1140,11 +1346,17 @@ def api_create_accounting():
     conn = get_db()
     entry_num = gen_accounting_id(conn)
     try:
+        supplier_id = data.get('supplier_id', '')
+        supplier_name = data.get('supplier', '')
+        if supplier_id:
+            sup = conn.execute('SELECT name FROM suppliers WHERE supplier_id=?', (supplier_id,)).fetchone()
+            if sup:
+                supplier_name = sup['name']
         conn.execute('''INSERT INTO accounting_entries
-            (entry_number, supplier, description, date, subtotal,
+            (entry_number, supplier_id, supplier, description, date, subtotal,
              tps_amount, tvq_amount, total, category)
-            VALUES (?,?,?,?,?,?,?,?,?)''',
-                     (entry_num, data['supplier'], data.get('description', ''),
+            VALUES (?,?,?,?,?,?,?,?,?,?)''',
+                     (entry_num, supplier_id, supplier_name, data.get('description', ''),
                       data['date'], float(data.get('subtotal', 0)),
                       float(data.get('tps_amount', 0)), float(data.get('tvq_amount', 0)),
                       float(data['total']), data.get('category', 'Fournitures')))

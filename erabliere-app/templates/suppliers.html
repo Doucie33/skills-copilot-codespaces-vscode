@@ -1,0 +1,191 @@
+{% extends "base.html" %}
+{% block title %}Fournisseurs{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1 class="page-title"><i class="bi bi-truck"></i> Fournisseurs</h1>
+  <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#supplierModal" onclick="openNew()">
+    <i class="bi bi-plus-lg me-1"></i>Nouveau fournisseur
+  </button>
+</div>
+
+<div class="card">
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-hover mb-0" id="suppliersTable">
+        <thead>
+          <tr>
+            <th>ID</th><th>Nom</th><th>Contact</th>
+            <th>Téléphone</th><th>Courriel</th><th>Ville</th><th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for s in suppliers %}
+          <tr>
+            <td><code class="small text-success">{{ s.supplier_id }}</code></td>
+            <td>
+              <div class="fw-semibold">{{ s.name }}</div>
+              {% if s.notes %}<div class="text-muted small">{{ s.notes }}</div>{% endif %}
+            </td>
+            <td>{{ s.contact_name or '—' }}</td>
+            <td>{{ s.phone or '—' }}</td>
+            <td>{{ s.email or '—' }}</td>
+            <td>{{ s.city or '—' }}</td>
+            <td>
+              <div class="d-flex gap-1 justify-content-end">
+                <button class="btn btn-sm btn-outline-primary" onclick="editSupplier({{ s|tojson }})">
+                  <i class="bi bi-pencil"></i>
+                </button>
+                <button class="btn btn-sm btn-outline-danger" onclick="deleteSupplier('{{ s.supplier_id }}')">
+                  <i class="bi bi-trash"></i>
+                </button>
+              </div>
+            </td>
+          </tr>
+          {% else %}
+          <tr><td colspan="7" class="text-center text-muted py-5">
+            <i class="bi bi-truck fs-2 d-block mb-2"></i>Aucun fournisseur enregistré.
+          </td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- Modal -->
+<div class="modal fade" id="supplierModal" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="modalTitle">Nouveau fournisseur</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="editSupplierId"/>
+        <div class="row g-3">
+          <div class="col-md-6">
+            <label class="form-label">Nom de l'entreprise *</label>
+            <input type="text" class="form-control" id="sName" placeholder="Ex: Acériculture Beauce Inc."/>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Personne contact</label>
+            <input type="text" class="form-control" id="sContact" placeholder="Prénom Nom"/>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Téléphone</label>
+            <input type="tel" class="form-control" id="sPhone" placeholder="418-000-0000"/>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Courriel</label>
+            <input type="email" class="form-control" id="sEmail"/>
+          </div>
+          <div class="col-12">
+            <label class="form-label">Adresse</label>
+            <input type="text" class="form-control" id="sAddress" placeholder="123 Rue principale"/>
+          </div>
+          <div class="col-md-4">
+            <label class="form-label">Ville</label>
+            <input type="text" class="form-control" id="sCity"/>
+          </div>
+          <div class="col-md-4">
+            <label class="form-label">Province</label>
+            <select class="form-select" id="sProvince">
+              <option value="QC">Québec</option>
+              <option value="ON">Ontario</option>
+              <option value="NB">Nouveau-Brunswick</option>
+              <option value="NS">Nouvelle-Écosse</option>
+              <option value="PE">Île-du-Prince-Édouard</option>
+              <option value="NL">Terre-Neuve</option>
+              <option value="MB">Manitoba</option>
+              <option value="SK">Saskatchewan</option>
+              <option value="AB">Alberta</option>
+              <option value="BC">Colombie-Britannique</option>
+            </select>
+          </div>
+          <div class="col-md-4">
+            <label class="form-label">Code postal</label>
+            <input type="text" class="form-control" id="sPostal" placeholder="G1A 0A1"/>
+          </div>
+          <div class="col-12">
+            <label class="form-label">Notes</label>
+            <textarea class="form-control" id="sNotes" rows="2" placeholder="Conditions, délais de livraison..."></textarea>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+        <button type="button" class="btn btn-primary" onclick="saveSupplier()">
+          <i class="bi bi-check-lg me-1"></i>Enregistrer
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+$(function() {
+  $('#suppliersTable').DataTable({
+    language: { url: 'https://cdn.datatables.net/plug-ins/1.13.8/i18n/fr-FR.json' },
+    order: [[1, 'asc']]
+  });
+});
+
+function openNew() {
+  document.getElementById('modalTitle').textContent = 'Nouveau fournisseur';
+  document.getElementById('editSupplierId').value = '';
+  ['sName','sContact','sPhone','sEmail','sAddress','sCity','sPostal','sNotes'].forEach(id => {
+    document.getElementById(id).value = '';
+  });
+  document.getElementById('sProvince').value = 'QC';
+}
+
+function editSupplier(s) {
+  document.getElementById('modalTitle').textContent = 'Modifier le fournisseur';
+  document.getElementById('editSupplierId').value = s.supplier_id;
+  document.getElementById('sName').value = s.name || '';
+  document.getElementById('sContact').value = s.contact_name || '';
+  document.getElementById('sPhone').value = s.phone || '';
+  document.getElementById('sEmail').value = s.email || '';
+  document.getElementById('sAddress').value = s.address || '';
+  document.getElementById('sCity').value = s.city || '';
+  document.getElementById('sProvince').value = s.province || 'QC';
+  document.getElementById('sPostal').value = s.postal_code || '';
+  document.getElementById('sNotes').value = s.notes || '';
+  new bootstrap.Modal(document.getElementById('supplierModal')).show();
+}
+
+async function saveSupplier() {
+  const sid = document.getElementById('editSupplierId').value;
+  const data = {
+    name: document.getElementById('sName').value.trim(),
+    contact_name: document.getElementById('sContact').value.trim(),
+    phone: document.getElementById('sPhone').value.trim(),
+    email: document.getElementById('sEmail').value.trim(),
+    address: document.getElementById('sAddress').value.trim(),
+    city: document.getElementById('sCity').value.trim(),
+    province: document.getElementById('sProvince').value,
+    postal_code: document.getElementById('sPostal').value.trim(),
+    notes: document.getElementById('sNotes').value.trim(),
+    active: 1,
+  };
+  if (!data.name) { alert('Le nom est obligatoire.'); return; }
+
+  const url = sid ? `/api/suppliers/${sid}` : '/api/suppliers';
+  const method = sid ? 'PUT' : 'POST';
+  const res = await fetch(url, { method, headers: {'Content-Type':'application/json'}, body: JSON.stringify(data) });
+  const json = await res.json();
+  if (json.success) location.reload();
+  else alert('Erreur: ' + json.error);
+}
+
+async function deleteSupplier(sid) {
+  if (!confirm('Désactiver ce fournisseur?')) return;
+  const res = await fetch(`/api/suppliers/${sid}`, { method: 'DELETE' });
+  const json = await res.json();
+  if (json.success) location.reload();
+}
+</script>
+{% endblock %}

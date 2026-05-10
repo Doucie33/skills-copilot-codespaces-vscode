@@ -69,7 +69,10 @@
           {% for e in entries %}
           <tr>
             <td><code class="small">{{ e.entry_number }}</code></td>
-            <td class="fw-semibold">{{ e.supplier }}</td>
+            <td class="fw-semibold">
+              {{ e.supplier }}
+              {% if e.supplier_id %}<div><code class="small text-muted">{{ e.supplier_id }}</code></div>{% endif %}
+            </td>
             <td class="text-muted small">{{ e.description or '—' }}</td>
             <td>{{ e.date }}</td>
             <td><span class="badge bg-secondary">{{ e.category }}</span></td>
@@ -106,7 +109,19 @@
         <div class="row g-3">
           <div class="col-md-6">
             <label class="form-label">Fournisseur *</label>
-            <input type="text" class="form-control" id="eSupplier" placeholder="Nom du fournisseur"/>
+            <select class="form-select" id="eSupplier">
+              <option value="">— Sélectionner un fournisseur —</option>
+              {% for s in suppliers %}
+              <option value="{{ s.supplier_id }}" data-name="{{ s.name }}">
+                [{{ s.supplier_id }}] {{ s.name }}
+              </option>
+              {% endfor %}
+              <option value="_autre">— Autre (saisir manuellement) —</option>
+            </select>
+          </div>
+          <div class="col-md-6" id="supplierManualBox" style="display:none">
+            <label class="form-label">Nom du fournisseur (autre)</label>
+            <input type="text" class="form-control" id="eSupplierManual" placeholder="Nom du fournisseur"/>
           </div>
           <div class="col-md-6">
             <label class="form-label">Date *</label>
@@ -184,8 +199,16 @@ $(function() {
   document.getElementById('eDate').value = new Date().toISOString().split('T')[0];
 });
 
+document.getElementById('eSupplier').addEventListener('change', function() {
+  const manualBox = document.getElementById('supplierManualBox');
+  manualBox.style.display = this.value === '_autre' ? '' : 'none';
+});
+
 function openNew() {
-  ['eSupplier','eDescription'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('eSupplier').value = '';
+  document.getElementById('supplierManualBox').style.display = 'none';
+  document.getElementById('eSupplierManual').value = '';
+  document.getElementById('eDescription').value = '';
   ['eSubtotal','eTPS','eTVQ','eTotal'].forEach(id => document.getElementById(id).value = '0');
   document.getElementById('eDate').value = new Date().toISOString().split('T')[0];
   document.getElementById('eCategory').value = 'Fournitures';
@@ -213,8 +236,19 @@ function autoCalcTVQ() {
 }
 
 async function saveEntry() {
+  const supSel = document.getElementById('eSupplier');
+  const supVal = supSel.value;
+  let supplierId = '';
+  let supplierName = '';
+  if (supVal === '_autre') {
+    supplierName = document.getElementById('eSupplierManual').value.trim();
+  } else if (supVal) {
+    supplierId = supVal;
+    supplierName = supSel.options[supSel.selectedIndex].dataset.name || '';
+  }
   const data = {
-    supplier: document.getElementById('eSupplier').value.trim(),
+    supplier_id: supplierId,
+    supplier: supplierName,
     date: document.getElementById('eDate').value,
     category: document.getElementById('eCategory').value,
     description: document.getElementById('eDescription').value.trim(),
