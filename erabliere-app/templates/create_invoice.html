@@ -31,10 +31,25 @@
           </div>
           <div class="col-md-4">
             <label class="form-label">Statut</label>
-            <select class="form-select" id="invStatus">
+            <select class="form-select" id="invStatus" onchange="togglePaymentFields()">
               <option value="payée">Payée</option>
               <option value="en attente">En attente</option>
               <option value="annulée">Annulée</option>
+            </select>
+          </div>
+          <div class="col-md-6" id="paymentDateBox">
+            <label class="form-label">Date de paiement</label>
+            <input type="date" class="form-control" id="invPaymentDate" value="{{ today }}"/>
+          </div>
+          <div class="col-md-6" id="paymentMethodBox">
+            <label class="form-label">Mode de paiement</label>
+            <select class="form-select" id="invPaymentMethod">
+              <option value="comptant">Comptant</option>
+              <option value="carte crédit">Carte de crédit</option>
+              <option value="carte débit">Carte de débit</option>
+              <option value="chèque">Chèque</option>
+              <option value="virement">Virement bancaire</option>
+              <option value="autre">Autre</option>
             </select>
           </div>
           <div class="col-12">
@@ -392,8 +407,17 @@ function getInvoiceData() {
     notes: document.getElementById('invNotes').value,
     discount_label: currentDiscount.label || '',
     discount_amount: discountAmt,
+    payment_date: document.getElementById('invPaymentDate').value || null,
+    payment_method: document.getElementById('invPaymentMethod').value || '',
     items,
   };
+}
+
+function togglePaymentFields() {
+  const status = document.getElementById('invStatus').value;
+  const show = status === 'payée';
+  document.getElementById('paymentDateBox').style.display = show ? '' : 'none';
+  document.getElementById('paymentMethodBox').style.display = show ? '' : 'none';
 }
 
 function previewInvoice() {

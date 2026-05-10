@@ -5,6 +5,9 @@
 <div class="page-header">
   <h1 class="page-title"><i class="bi bi-box-seam"></i> Produits</h1>
   <div class="d-flex gap-2 flex-wrap">
+    <button class="btn btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#importModal">
+      <i class="bi bi-filetype-csv me-1"></i>Importer CSV
+    </button>
     <button class="btn btn-outline-warning" id="btnBulkUpdate" disabled
             data-bs-toggle="modal" data-bs-target="#bulkModal">
       <i class="bi bi-percent me-1"></i>Modifier les prix
@@ -29,6 +32,7 @@
             </th>
             <th>ID Produit</th><th>Nom</th><th>Catégorie</th>
             <th>Unité</th><th class="text-end">Prix unitaire</th>
+            <th class="text-center">Stock</th>
             <th class="text-center">Taxes</th><th class="text-center">Statut</th><th></th>
           </tr>
         </thead>
@@ -47,6 +51,24 @@
             <td>{{ p.category or '—' }}</td>
             <td>{{ p.unit }}</td>
             <td class="text-end fw-semibold">{{ "%.2f"|format(p.price) }} $</td>
+            <td class="text-center">
+              {% set stock = p.stock_quantity or 0 %}
+              {% set alert_threshold = p.stock_alert_threshold or 0 %}
+              {% if alert_threshold > 0 and stock <= alert_threshold %}
+                <span class="badge bg-danger" title="Stock bas!">
+                  {{ stock }} {{ p.unit }}
+                </span>
+              {% elif stock > 0 %}
+                <span class="badge bg-success">
+                  {{ stock }} {{ p.unit }}
+                </span>
+              {% else %}
+                <span class="text-muted small">—</span>
+              {% endif %}
+              <button class="btn btn-sm btn-link p-0 ms-1" onclick='openStockAdjust({{ p|tojson }})' title="Ajuster le stock">
+                <i class="bi bi-pencil-square small text-muted"></i>
+              </button>
+            </td>
             <td class="text-center">
               <span class="badge badge-tax tax-{{ p.tax_type }}">
                 {{ {'tps_tvq':'TPS+TVQ','tps_only':'TPS seul.','tvq_only':'TVQ seul.','none':'Aucune'}[p.tax_type] }}
@@ -129,6 +151,14 @@
             <label class="form-label">Description</label>
             <textarea class="form-control" id="prodDesc" rows="2"></textarea>
           </div>
+          <div class="col-md-6">
+            <label class="form-label">Stock actuel</label>
+            <input type="number" class="form-control" id="prodStock" step="0.01" min="0" value="0" placeholder="0"/>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Seuil d'alerte stock</label>
+            <input type="number" class="form-control" id="prodStockAlert" step="0.01" min="0" value="0" placeholder="0 = désactivé"/>
+          </div>
           <div class="col-12">
             <div class="form-check form-switch">
               <input class="form-check-input" type="checkbox" id="prodActive" checked/>
@@ -199,6 +229,57 @@
         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
         <button type="button" class="btn btn-warning fw-bold" onclick="applyBulkUpdate()">
           <i class="bi bi-check-lg me-1"></i>Appliquer les changements
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+<!-- Modal ajustement de stock -->
+<div class="modal fade" id="stockModal" tabindex="-1">
+  <div class="modal-dialog modal-sm">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-boxes me-2"></i>Ajuster le stock</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="stockProdId"/>
+        <p class="small text-muted mb-2" id="stockProdName"></p>
+        <label class="form-label">Quantité en stock</label>
+        <input type="number" class="form-control" id="stockQty" step="0.01" min="0"/>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+        <button type="button" class="btn btn-primary" onclick="saveStockAdjust()">
+          <i class="bi bi-check-lg me-1"></i>Enregistrer
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal import CSV -->
+<div class="modal fade" id="importModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-filetype-csv me-2"></i>Importer des produits (CSV)</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="alert alert-info small">
+          <strong>Colonnes acceptées :</strong><br>
+          <code>nom</code> (requis), <code>prix</code>, <code>categorie</code>, <code>unite</code>,
+          <code>taxe</code>, <code>description</code>, <code>stock</code>, <code>alerte</code><br>
+          Encodage: UTF-8, séparateur virgule ou point-virgule.
+        </div>
+        <input type="file" class="form-control" id="csvFileProduct" accept=".csv"/>
+        <div id="importResultProduct" class="mt-2"></div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Fermer</button>
+        <button type="button" class="btn btn-primary" onclick="importProductsCsv()">
+          <i class="bi bi-upload me-1"></i>Importer
         </button>
       </div>
     </div>
@@ -288,6 +369,8 @@ function openNew() {
   document.getElementById('prodPrice').value = '';
   document.getElementById('prodUnit').value = 'unité';
   document.getElementById('prodTaxType').value = 'tps_tvq';
+  document.getElementById('prodStock').value = '0';
+  document.getElementById('prodStockAlert').value = '0';
   document.getElementById('prodActive').checked = true;
 }
 
@@ -300,6 +383,8 @@ function editProduct(p) {
   document.getElementById('prodUnit').value = p.unit || 'unité';
   document.getElementById('prodTaxType').value = p.tax_type;
   document.getElementById('prodDesc').value = p.description || '';
+  document.getElementById('prodStock').value = p.stock_quantity || 0;
+  document.getElementById('prodStockAlert').value = p.stock_alert_threshold || 0;
   document.getElementById('prodActive').checked = p.active == 1;
   new bootstrap.Modal(document.getElementById('productModal')).show();
 }
@@ -314,6 +399,8 @@ async function saveProduct() {
     tax_type: document.getElementById('prodTaxType').value,
     description: document.getElementById('prodDesc').value.trim(),
     active: document.getElementById('prodActive').checked ? 1 : 0,
+    stock_quantity: parseFloat(document.getElementById('prodStock').value) || 0,
+    stock_alert_threshold: parseFloat(document.getElementById('prodStockAlert').value) || 0,
   };
   if (!data.name || !data.price) { alert('Nom et prix obligatoires.'); return; }
   const res = await fetch(pid ? `/api/products/${pid}` : '/api/products',
@@ -327,6 +414,41 @@ async function deleteProduct(pid) {
   const res = await fetch(`/api/products/${pid}`, { method: 'DELETE' });
   const json = await res.json();
   if (json.success) location.reload();
+}
+
+function openStockAdjust(p) {
+  document.getElementById('stockProdId').value = p.product_id;
+  document.getElementById('stockProdName').textContent = p.name;
+  document.getElementById('stockQty').value = p.stock_quantity || 0;
+  new bootstrap.Modal(document.getElementById('stockModal')).show();
+}
+
+async function saveStockAdjust() {
+  const pid = document.getElementById('stockProdId').value;
+  const qty = parseFloat(document.getElementById('stockQty').value) || 0;
+  const res = await fetch('/api/products/stock-adjust', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ product_id: pid, stock_quantity: qty })
+  });
+  const json = await res.json();
+  if (json.success) location.reload(); else alert('Erreur: ' + json.error);
+}
+
+async function importProductsCsv() {
+  const fileInput = document.getElementById('csvFileProduct');
+  if (!fileInput.files.length) { alert('Sélectionnez un fichier CSV.'); return; }
+  const formData = new FormData();
+  formData.append('file', fileInput.files[0]);
+  const res = await fetch('/api/products/import-csv', { method: 'POST', body: formData });
+  const json = await res.json();
+  const div = document.getElementById('importResultProduct');
+  if (json.success) {
+    div.innerHTML = `<div class="alert alert-success mt-2">${json.imported} produit(s) importé(s)${json.errors ? `, ${json.errors} erreur(s)` : ''}.</div>`;
+    if (json.imported > 0) setTimeout(() => location.reload(), 1500);
+  } else {
+    div.innerHTML = `<div class="alert alert-danger mt-2">Erreur: ${json.error}</div>`;
+  }
 }
 </script>
 {% endblock %}

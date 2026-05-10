@@ -4,9 +4,14 @@
 {% block content %}
 <div class="page-header">
   <h1 class="page-title"><i class="bi bi-people"></i> Clients</h1>
-  <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#customerModal" onclick="openNew()">
-    <i class="bi bi-person-plus me-1"></i>Nouveau client
-  </button>
+  <div class="d-flex gap-2">
+    <button class="btn btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#importCustomerModal">
+      <i class="bi bi-filetype-csv me-1"></i>Importer CSV
+    </button>
+    <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#customerModal" onclick="openNew()">
+      <i class="bi bi-person-plus me-1"></i>Nouveau client
+    </button>
+  </div>
 </div>
 
 <div class="card">
@@ -157,6 +162,34 @@
     </div>
   </div>
 </div>
+<!-- Modal import CSV clients -->
+<div class="modal fade" id="importCustomerModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-filetype-csv me-2"></i>Importer des clients (CSV)</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="alert alert-info small">
+          <strong>Colonnes acceptées :</strong><br>
+          <code>prenom</code> (requis), <code>nom</code> (requis), <code>telephone</code>,
+          <code>courriel</code>, <code>adresse</code>, <code>ville</code>,
+          <code>province</code>, <code>code_postal</code>, <code>notes</code><br>
+          Encodage: UTF-8, séparateur virgule ou point-virgule.
+        </div>
+        <input type="file" class="form-control" id="csvFileCustomer" accept=".csv"/>
+        <div id="importResultCustomer" class="mt-2"></div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Fermer</button>
+        <button type="button" class="btn btn-primary" onclick="importCustomersCsv()">
+          <i class="bi bi-upload me-1"></i>Importer
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
 {% endblock %}
 
 {% block scripts %}
@@ -232,6 +265,22 @@ async function deleteCustomer(cid) {
   const res = await fetch(`/api/customers/${cid}`, { method: 'DELETE' });
   const json = await res.json();
   if (json.success) location.reload();
+}
+
+async function importCustomersCsv() {
+  const fileInput = document.getElementById('csvFileCustomer');
+  if (!fileInput.files.length) { alert('Sélectionnez un fichier CSV.'); return; }
+  const formData = new FormData();
+  formData.append('file', fileInput.files[0]);
+  const res = await fetch('/api/customers/import-csv', { method: 'POST', body: formData });
+  const json = await res.json();
+  const div = document.getElementById('importResultCustomer');
+  if (json.success) {
+    div.innerHTML = `<div class="alert alert-success mt-2">${json.imported} client(s) importé(s)${json.errors ? `, ${json.errors} erreur(s)` : ''}.</div>`;
+    if (json.imported > 0) setTimeout(() => location.reload(), 1500);
+  } else {
+    div.innerHTML = `<div class="alert alert-danger mt-2">Erreur: ${json.error}</div>`;
+  }
 }
 </script>
 {% endblock %}

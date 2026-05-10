@@ -53,6 +53,11 @@
       <i class="bi bi-graph-up"></i> Historique des ventes
     </a></li>
 
+    <li class="nav-section">Production</li>
+    <li><a href="{{ url_for('production') }}" class="{% if request.endpoint == 'production' %}active{% endif %}">
+      <i class="bi bi-droplet-half"></i> Production
+    </a></li>
+
     <li class="nav-section">Comptabilité</li>
     <li><a href="{{ url_for('accounting') }}" class="{% if request.endpoint == 'accounting' %}active{% endif %}">
       <i class="bi bi-journal-text"></i> Comptabilité

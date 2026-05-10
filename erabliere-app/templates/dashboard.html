@@ -43,6 +43,32 @@
   </div>
 </div>
 
+{% if stock_alerts %}
+<div class="alert alert-warning d-flex align-items-start gap-2 mb-4">
+  <i class="bi bi-exclamation-triangle-fill fs-5 mt-1"></i>
+  <div>
+    <strong>Alerte stock bas :</strong>
+    {% for p in stock_alerts %}
+    <span class="badge bg-warning text-dark me-1">
+      {{ p.name }} — {{ p.stock_quantity }} {{ p.unit }}
+      (seuil: {{ p.stock_alert_threshold }})
+    </span>
+    {% endfor %}
+    <a href="{{ url_for('products') }}" class="ms-2 small text-decoration-none">Gérer les stocks →</a>
+  </div>
+</div>
+{% endif %}
+
+{% if stats.pending_invoices > 0 %}
+<div class="alert alert-info d-flex align-items-center gap-2 mb-4">
+  <i class="bi bi-clock-history fs-5"></i>
+  <span>
+    <strong>{{ stats.pending_invoices }}</strong> facture(s) en attente de paiement.
+    <a href="{{ url_for('invoices') }}" class="ms-2 text-decoration-none">Voir →</a>
+  </span>
+</div>
+{% endif %}
+
 <div class="row g-3 mb-4">
   <!-- Sales chart -->
   <div class="col-lg-8">

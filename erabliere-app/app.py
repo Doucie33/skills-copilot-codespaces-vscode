@@ -231,6 +231,30 @@ def init_db():
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )''')
 
+    c.execute('''CREATE TABLE IF NOT EXISTS production_seasons (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        season_id TEXT UNIQUE NOT NULL,
+        year INTEGER NOT NULL,
+        start_date DATE,
+        end_date DATE,
+        total_sap_liters REAL DEFAULT 0,
+        total_syrup_liters REAL DEFAULT 0,
+        notes TEXT DEFAULT '',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )''')
+
+    c.execute('''CREATE TABLE IF NOT EXISTS production_batches (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        batch_id TEXT UNIQUE NOT NULL,
+        season_id TEXT NOT NULL,
+        date DATE NOT NULL,
+        sap_liters REAL NOT NULL DEFAULT 0,
+        syrup_liters REAL NOT NULL DEFAULT 0,
+        ratio REAL DEFAULT 0,
+        notes TEXT DEFAULT '',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )''')
+
     conn.commit()
     _migrate_db(conn)
     conn.close()
@@ -262,8 +286,41 @@ def _migrate_db(conn):
         ("subscriptions", "discount_value", "REAL DEFAULT 0"),
         ("invoices", "discount_label", "TEXT DEFAULT ''"),
         ("invoices", "discount_amount", "REAL DEFAULT 0"),
+        ("invoices", "payment_date", "DATE DEFAULT NULL"),
+        ("invoices", "payment_method", "TEXT DEFAULT ''"),
         ("accounting_entries", "supplier_id", "TEXT DEFAULT ''"),
+        ("products", "stock_quantity", "REAL DEFAULT 0"),
+        ("products", "stock_alert_threshold", "REAL DEFAULT 0"),
     ]
+    table_migrations_extra = [
+        """CREATE TABLE IF NOT EXISTS production_seasons (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            season_id TEXT UNIQUE NOT NULL,
+            year INTEGER NOT NULL,
+            start_date DATE,
+            end_date DATE,
+            total_sap_liters REAL DEFAULT 0,
+            total_syrup_liters REAL DEFAULT 0,
+            notes TEXT DEFAULT '',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )""",
+        """CREATE TABLE IF NOT EXISTS production_batches (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            batch_id TEXT UNIQUE NOT NULL,
+            season_id TEXT NOT NULL,
+            date DATE NOT NULL,
+            sap_liters REAL NOT NULL DEFAULT 0,
+            syrup_liters REAL NOT NULL DEFAULT 0,
+            ratio REAL DEFAULT 0,
+            notes TEXT DEFAULT '',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )""",
+    ]
+    for sql in table_migrations_extra:
+        try:
+            c.execute(sql)
+        except Exception:
+            pass
     for sql in table_migrations:
         try:
             c.execute(sql)
@@ -346,6 +403,15 @@ def dashboard():
                  FROM invoices inv ORDER BY inv.created_at DESC LIMIT 8''')
     recent_invoices = rows_to_list(c.fetchall())
 
+    c.execute('''SELECT product_id, name, stock_quantity, stock_alert_threshold, unit
+                 FROM products
+                 WHERE active=1 AND stock_alert_threshold > 0 AND stock_quantity <= stock_alert_threshold
+                 ORDER BY stock_quantity ASC''')
+    stock_alerts = rows_to_list(c.fetchall())
+
+    c.execute("SELECT COUNT(*) FROM invoices WHERE status='en attente'")
+    stats['pending_invoices'] = c.fetchone()[0]
+
     company = row_to_dict(conn.execute('SELECT * FROM company_settings WHERE id=1').fetchone())
     conn.close()
 
@@ -353,6 +419,7 @@ def dashboard():
                            stats=stats,
                            chart_data=json.dumps(chart_data),
                            recent_invoices=recent_invoices,
+                           stock_alerts=stock_alerts,
                            company=company)
 
 
@@ -420,11 +487,13 @@ def api_create_product():
     pid = gen_product_id(conn)
     try:
         conn.execute('''INSERT INTO products
-            (product_id, name, price, category, tax_type, description, unit)
-            VALUES (?,?,?,?,?,?,?)''',
+            (product_id, name, price, category, tax_type, description, unit, stock_quantity, stock_alert_threshold)
+            VALUES (?,?,?,?,?,?,?,?,?)''',
                      (pid, data['name'], float(data['price']),
                       data.get('category', ''), data.get('tax_type', 'tps_tvq'),
-                      data.get('description', ''), data.get('unit', 'unité')))
+                      data.get('description', ''), data.get('unit', 'unité'),
+                      float(data.get('stock_quantity', 0)),
+                      float(data.get('stock_alert_threshold', 0))))
         conn.commit()
         product = row_to_dict(conn.execute('SELECT * FROM products WHERE product_id=?', (pid,)).fetchone())
         conn.close()
@@ -476,11 +545,15 @@ def api_update_product(product_id):
     conn = get_db()
     try:
         conn.execute('''UPDATE products SET
-            name=?, price=?, category=?, tax_type=?, description=?, unit=?, active=?
+            name=?, price=?, category=?, tax_type=?, description=?, unit=?, active=?,
+            stock_quantity=?, stock_alert_threshold=?
             WHERE product_id=?''',
                      (data['name'], float(data['price']), data.get('category', ''),
                       data.get('tax_type', 'tps_tvq'), data.get('description', ''),
-                      data.get('unit', 'unité'), int(data.get('active', 1)), product_id))
+                      data.get('unit', 'unité'), int(data.get('active', 1)),
+                      float(data.get('stock_quantity', 0)),
+                      float(data.get('stock_alert_threshold', 0)),
+                      product_id))
         conn.commit()
         conn.close()
         return jsonify({'success': True})
@@ -867,16 +940,23 @@ def api_save_invoice():
         tvq_total = round(tvq_total, 2)
         total = round(subtotal - discount_amount + tps_total + tvq_total, 2)
 
+        inv_status = data.get('status', 'payée')
+        payment_date = data.get('payment_date', '') or None
+        payment_method = data.get('payment_method', '')
+        if inv_status == 'payée' and not payment_date:
+            payment_date = data.get('date', date.today().isoformat())
+
         conn.execute('''INSERT INTO invoices
             (invoice_number, customer_id, customer_name, date,
              subtotal, discount_label, discount_amount,
-             tps_amount, tvq_amount, total, status, notes)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?)''',
+             tps_amount, tvq_amount, total, status, notes, payment_date, payment_method)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
                      (inv_num, customer_id, customer_name,
                       data.get('date', date.today().isoformat()),
                       subtotal, discount_label, discount_amount,
                       tps_total, tvq_total, total,
-                      data.get('status', 'payée'), data.get('notes', '')))
+                      inv_status, data.get('notes', ''),
+                      payment_date, payment_method))
 
         for item in items:
             conn.execute('''INSERT INTO invoice_items
@@ -887,6 +967,11 @@ def api_save_invoice():
                           float(item['quantity']), float(item['unit_price']),
                           item.get('tax_type', 'tps_tvq'),
                           item['_tps'], item['_tvq'], item['_total']))
+            # Déduire du stock
+            conn.execute('''UPDATE products
+                SET stock_quantity = MAX(0, stock_quantity - ?)
+                WHERE product_id=?''',
+                         (float(item['quantity']), item['product_id']))
 
         conn.commit()
         conn.close()
@@ -954,15 +1039,23 @@ def api_update_invoice(invoice_number):
         tvq_total = round(tvq_total, 2)
         total = round(subtotal - discount_amount + tps_total + tvq_total, 2)
 
+        inv_status = data.get('status', 'en attente')
+        payment_date = data.get('payment_date', '') or None
+        payment_method = data.get('payment_method', '')
+        if inv_status == 'payée' and not payment_date:
+            payment_date = data.get('date', date.today().isoformat())
+
         conn.execute('''UPDATE invoices SET
             customer_id=?, customer_name=?, date=?,
             subtotal=?, discount_label=?, discount_amount=?,
-            tps_amount=?, tvq_amount=?, total=?, status=?, notes=?
+            tps_amount=?, tvq_amount=?, total=?, status=?, notes=?,
+            payment_date=?, payment_method=?
             WHERE invoice_number=?''',
                      (customer_id, customer_name, data.get('date'),
                       subtotal, discount_label, discount_amount,
                       tps_total, tvq_total, total,
-                      data.get('status', 'en attente'), data.get('notes', ''),
+                      inv_status, data.get('notes', ''),
+                      payment_date, payment_method,
                       invoice_number))
 
         conn.execute('DELETE FROM invoice_items WHERE invoice_number=?', (invoice_number,))
@@ -1481,6 +1574,211 @@ def api_bestsellers():
             GROUP BY ii.product_id ORDER BY total_qty DESC LIMIT 10''').fetchall())
     conn.close()
     return jsonify(rows)
+
+
+# ─── PRODUCTION ──────────────────────────────────────────────────────────────
+
+def gen_season_id(conn):
+    return gen_sequential_id(conn, 'season', 'SAI')
+
+def gen_batch_id(conn):
+    return gen_sequential_id(conn, 'batch', 'LOT')
+
+
+@app.route('/production')
+def production():
+    conn = get_db()
+    seasons = rows_to_list(conn.execute(
+        'SELECT * FROM production_seasons ORDER BY year DESC, start_date DESC').fetchall())
+    for s in seasons:
+        s['batches'] = rows_to_list(conn.execute(
+            'SELECT * FROM production_batches WHERE season_id=? ORDER BY date', (s['season_id'],)).fetchall())
+    company = row_to_dict(conn.execute('SELECT * FROM company_settings WHERE id=1').fetchone())
+    conn.close()
+    return render_template('production.html', seasons=seasons, company=company,
+                           current_year=date.today().year)
+
+
+@app.route('/api/production/seasons', methods=['GET'])
+def api_production_seasons():
+    conn = get_db()
+    rows = rows_to_list(conn.execute(
+        'SELECT * FROM production_seasons ORDER BY year DESC').fetchall())
+    conn.close()
+    return jsonify(rows)
+
+
+@app.route('/api/production/seasons', methods=['POST'])
+def api_create_season():
+    data = request.json
+    conn = get_db()
+    sid = gen_season_id(conn)
+    try:
+        conn.execute('''INSERT INTO production_seasons
+            (season_id, year, start_date, end_date, notes)
+            VALUES (?,?,?,?,?)''',
+                     (sid, int(data.get('year', date.today().year)),
+                      data.get('start_date') or None,
+                      data.get('end_date') or None,
+                      data.get('notes', '')))
+        conn.commit()
+        season = row_to_dict(conn.execute(
+            'SELECT * FROM production_seasons WHERE season_id=?', (sid,)).fetchone())
+        conn.close()
+        return jsonify({'success': True, 'season': season})
+    except Exception as e:
+        conn.close()
+        return jsonify({'success': False, 'error': str(e)}), 400
+
+
+@app.route('/api/production/seasons/<season_id>', methods=['DELETE'])
+def api_delete_season(season_id):
+    conn = get_db()
+    conn.execute('DELETE FROM production_batches WHERE season_id=?', (season_id,))
+    conn.execute('DELETE FROM production_seasons WHERE season_id=?', (season_id,))
+    conn.commit()
+    conn.close()
+    return jsonify({'success': True})
+
+
+@app.route('/api/production/batches', methods=['POST'])
+def api_create_batch():
+    data = request.json
+    conn = get_db()
+    bid = gen_batch_id(conn)
+    try:
+        sap = float(data.get('sap_liters', 0))
+        syrup = float(data.get('syrup_liters', 0))
+        ratio = round(sap / syrup, 1) if syrup > 0 else 0
+        season_id = data['season_id']
+        conn.execute('''INSERT INTO production_batches
+            (batch_id, season_id, date, sap_liters, syrup_liters, ratio, notes)
+            VALUES (?,?,?,?,?,?,?)''',
+                     (bid, season_id, data['date'], sap, syrup, ratio,
+                      data.get('notes', '')))
+        conn.execute('''UPDATE production_seasons SET
+            total_sap_liters = (SELECT COALESCE(SUM(sap_liters),0) FROM production_batches WHERE season_id=?),
+            total_syrup_liters = (SELECT COALESCE(SUM(syrup_liters),0) FROM production_batches WHERE season_id=?)
+            WHERE season_id=?''', (season_id, season_id, season_id))
+        conn.commit()
+        batch = row_to_dict(conn.execute(
+            'SELECT * FROM production_batches WHERE batch_id=?', (bid,)).fetchone())
+        conn.close()
+        return jsonify({'success': True, 'batch': batch})
+    except Exception as e:
+        conn.close()
+        return jsonify({'success': False, 'error': str(e)}), 400
+
+
+@app.route('/api/production/batches/<batch_id>', methods=['DELETE'])
+def api_delete_batch(batch_id):
+    conn = get_db()
+    batch = row_to_dict(conn.execute(
+        'SELECT * FROM production_batches WHERE batch_id=?', (batch_id,)).fetchone())
+    if batch:
+        conn.execute('DELETE FROM production_batches WHERE batch_id=?', (batch_id,))
+        sid = batch['season_id']
+        conn.execute('''UPDATE production_seasons SET
+            total_sap_liters = (SELECT COALESCE(SUM(sap_liters),0) FROM production_batches WHERE season_id=?),
+            total_syrup_liters = (SELECT COALESCE(SUM(syrup_liters),0) FROM production_batches WHERE season_id=?)
+            WHERE season_id=?''', (sid, sid, sid))
+        conn.commit()
+    conn.close()
+    return jsonify({'success': True})
+
+
+# ─── IMPORT CSV ──────────────────────────────────────────────────────────────
+
+@app.route('/api/products/import-csv', methods=['POST'])
+def api_import_products_csv():
+    if 'file' not in request.files:
+        return jsonify({'success': False, 'error': 'Aucun fichier'}), 400
+    f = request.files['file']
+    if not f.filename.endswith('.csv'):
+        return jsonify({'success': False, 'error': 'Format CSV requis'}), 400
+    stream = io.StringIO(f.read().decode('utf-8-sig'))
+    reader = csv.DictReader(stream)
+    conn = get_db()
+    imported = errors = 0
+    for row in reader:
+        try:
+            name = row.get('nom') or row.get('name') or ''
+            price = row.get('prix') or row.get('price') or '0'
+            if not name:
+                errors += 1
+                continue
+            pid = gen_product_id(conn)
+            conn.execute('''INSERT INTO products
+                (product_id, name, price, category, tax_type, description, unit, stock_quantity, stock_alert_threshold)
+                VALUES (?,?,?,?,?,?,?,?,?)''',
+                         (pid, name.strip(), float(str(price).replace(',', '.')),
+                          (row.get('categorie') or row.get('category') or '').strip(),
+                          (row.get('taxe') or row.get('tax_type') or 'tps_tvq').strip(),
+                          (row.get('description') or '').strip(),
+                          (row.get('unite') or row.get('unit') or 'unité').strip(),
+                          float(str(row.get('stock') or row.get('stock_quantity') or '0').replace(',', '.')),
+                          float(str(row.get('alerte') or row.get('stock_alert_threshold') or '0').replace(',', '.'))))
+            imported += 1
+        except Exception:
+            errors += 1
+    conn.commit()
+    conn.close()
+    return jsonify({'success': True, 'imported': imported, 'errors': errors})
+
+
+@app.route('/api/customers/import-csv', methods=['POST'])
+def api_import_customers_csv():
+    if 'file' not in request.files:
+        return jsonify({'success': False, 'error': 'Aucun fichier'}), 400
+    f = request.files['file']
+    if not f.filename.endswith('.csv'):
+        return jsonify({'success': False, 'error': 'Format CSV requis'}), 400
+    stream = io.StringIO(f.read().decode('utf-8-sig'))
+    reader = csv.DictReader(stream)
+    conn = get_db()
+    imported = errors = 0
+    for row in reader:
+        try:
+            first = (row.get('prenom') or row.get('first_name') or '').strip()
+            last = (row.get('nom') or row.get('last_name') or '').strip()
+            if not first or not last:
+                errors += 1
+                continue
+            cid = gen_customer_id(conn)
+            conn.execute('''INSERT INTO customers
+                (customer_id, first_name, last_name, address, city, province,
+                 postal_code, phone, email, notes)
+                VALUES (?,?,?,?,?,?,?,?,?,?)''',
+                         (cid, first, last,
+                          (row.get('adresse') or row.get('address') or '').strip(),
+                          (row.get('ville') or row.get('city') or '').strip(),
+                          (row.get('province') or 'QC').strip(),
+                          (row.get('code_postal') or row.get('postal_code') or '').strip(),
+                          (row.get('telephone') or row.get('phone') or '').strip(),
+                          (row.get('courriel') or row.get('email') or '').strip(),
+                          (row.get('notes') or '').strip()))
+            imported += 1
+        except Exception:
+            errors += 1
+    conn.commit()
+    conn.close()
+    return jsonify({'success': True, 'imported': imported, 'errors': errors})
+
+
+@app.route('/api/products/stock-adjust', methods=['POST'])
+def api_stock_adjust():
+    """Ajustement manuel du stock d'un produit."""
+    data = request.json
+    conn = get_db()
+    try:
+        conn.execute('UPDATE products SET stock_quantity=? WHERE product_id=?',
+                     (float(data['stock_quantity']), data['product_id']))
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True})
+    except Exception as e:
+        conn.close()
+        return jsonify({'success': False, 'error': str(e)}), 400
 
 
 def open_browser():

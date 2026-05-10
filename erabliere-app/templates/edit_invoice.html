@@ -31,10 +31,26 @@
           </div>
           <div class="col-md-4">
             <label class="form-label">Statut</label>
-            <select class="form-select" id="invStatus">
+            <select class="form-select" id="invStatus" onchange="togglePaymentFields()">
               <option value="payée" {% if invoice.status == 'payée' %}selected{% endif %}>Payée</option>
               <option value="en attente" {% if invoice.status == 'en attente' %}selected{% endif %}>En attente</option>
               <option value="annulée" {% if invoice.status == 'annulée' %}selected{% endif %}>Annulée</option>
+            </select>
+          </div>
+          <div class="col-md-6" id="paymentDateBox" {% if invoice.status != 'payée' %}style="display:none"{% endif %}>
+            <label class="form-label">Date de paiement</label>
+            <input type="date" class="form-control" id="invPaymentDate"
+                   value="{{ invoice.payment_date or invoice.date }}"/>
+          </div>
+          <div class="col-md-6" id="paymentMethodBox" {% if invoice.status != 'payée' %}style="display:none"{% endif %}>
+            <label class="form-label">Mode de paiement</label>
+            <select class="form-select" id="invPaymentMethod">
+              <option value="comptant" {% if invoice.payment_method == 'comptant' %}selected{% endif %}>Comptant</option>
+              <option value="carte crédit" {% if invoice.payment_method == 'carte crédit' %}selected{% endif %}>Carte de crédit</option>
+              <option value="carte débit" {% if invoice.payment_method == 'carte débit' %}selected{% endif %}>Carte de débit</option>
+              <option value="chèque" {% if invoice.payment_method == 'chèque' %}selected{% endif %}>Chèque</option>
+              <option value="virement" {% if invoice.payment_method == 'virement' %}selected{% endif %}>Virement bancaire</option>
+              <option value="autre" {% if invoice.payment_method == 'autre' %}selected{% endif %}>Autre</option>
             </select>
           </div>
           <div class="col-12">
@@ -353,13 +369,16 @@ async function saveInvoice() {
     discountAmt = Math.round(discountAmt * 100) / 100;
   }
 
+  const status = document.getElementById('invStatus').value;
   const data = {
     customer_id: customerId,
     date: document.getElementById('invDate').value,
-    status: document.getElementById('invStatus').value,
+    status,
     notes: document.getElementById('invNotes').value,
     discount_label: currentDiscount.label || '',
     discount_amount: discountAmt,
+    payment_date: document.getElementById('invPaymentDate').value || null,
+    payment_method: document.getElementById('invPaymentMethod').value || '',
     items,
   };
 
@@ -374,6 +393,13 @@ async function saveInvoice() {
   } else {
     alert('Erreur: ' + json.error);
   }
+}
+
+function togglePaymentFields() {
+  const status = document.getElementById('invStatus').value;
+  const show = status === 'payée';
+  document.getElementById('paymentDateBox').style.display = show ? '' : 'none';
+  document.getElementById('paymentMethodBox').style.display = show ? '' : 'none';
 }
 
 // Load existing items on page load
