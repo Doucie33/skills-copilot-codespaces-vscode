@@ -77,28 +77,32 @@ chmod +x "$LAUNCHER"
 echo ""
 echo "  Vérification des composants Python..."
 
-install_flask() {
-    # Essai 1 : pip3 avec --user
-    pip3 install flask reportlab Pillow python-dateutil --user --quiet 2>/dev/null && return 0
-    # Essai 2 : python3 -m pip avec --user
-    python3 -m pip install flask reportlab Pillow python-dateutil --user --quiet 2>/dev/null && return 0
-    # Essai 3 : avec sudo apt (système)
-    sudo apt-get install -y python3-flask python3-pil 2>/dev/null && return 0
-    return 1
+install_deps() {
+    PKGS="flask reportlab Pillow python-dateutil"
+    # Essai 1 : pip3 --break-system-packages (Ubuntu 23+)
+    pip3 install $PKGS --break-system-packages --quiet 2>/dev/null && return 0
+    # Essai 2 : pip3 --user
+    pip3 install $PKGS --user --quiet 2>/dev/null && return 0
+    # Essai 3 : python3 -m pip --break-system-packages
+    python3 -m pip install $PKGS --break-system-packages --quiet 2>/dev/null && return 0
+    # Essai 4 : python3 -m pip --user
+    python3 -m pip install $PKGS --user --quiet 2>/dev/null && return 0
+    # Essai 5 : apt pour flask + pip pour reportlab
+    sudo apt-get install -y python3-flask python3-pil python3-dateutil 2>/dev/null
+    pip3 install reportlab --break-system-packages --quiet 2>/dev/null || \
+    pip3 install reportlab --user --quiet 2>/dev/null
+    return 0
 }
 
-if python3 -c "import flask" 2>/dev/null; then
-    echo "  ✓ Flask déjà installé"
+if python3 -c "import flask, reportlab, PIL, dateutil" 2>/dev/null; then
+    echo "  ✓ Tous les composants déjà installés"
 else
-    echo "  Installation de Flask (1-2 min)..."
-    if install_flask; then
-        echo "  ✓ Flask installé"
-    else
-        echo -e "  ${ROUGE}Erreur Flask — essai avec apt...${NC}"
-        sudo apt-get update -qq 2>/dev/null
+    echo "  Installation des composants (1-2 min)..."
+    # S'assurer que pip est disponible
+    if ! command -v pip3 &>/dev/null; then
         sudo apt-get install -y python3-pip 2>/dev/null
-        pip3 install flask reportlab Pillow python-dateutil --user --quiet 2>/dev/null
     fi
+    install_deps
 fi
 
 # Vérification finale
